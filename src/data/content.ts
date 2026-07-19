@@ -83,11 +83,3 @@ export const techStack = [
     detail: 'Gọi điện, speech-to-text và text-to-speech dùng chức năng mặc định của thiết bị.',
   },
 ]
-
-export const productScope = [
-  'Landing page giới thiệu DiVie tại divie.site.',
-  'App Android cho người cao tuổi và người thân.',
-  'Web admin để quản lý người dùng, dữ liệu sức khỏe, cảnh báo và nội dung.',
-  'Backend API xử lý logic, gọi Groq, bảo mật API key và tạo cảnh báo.',
-  'Tài liệu báo cáo và sổ tay nghiên cứu ghi lại quyết định trong quá trình phát triển.',
-]

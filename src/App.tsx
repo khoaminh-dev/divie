@@ -7,7 +7,6 @@ import { SolutionSection } from './components/SolutionSection'
 import { FeatureBento } from './components/FeatureBento'
 import { AiSection } from './components/AiSection'
 import { TechSection } from './components/TechSection'
-import { ProductScope } from './components/ProductScope'
 import { FinalCta } from './components/FinalCta'
 import { Footer } from './components/Footer'
 
@@ -23,7 +22,6 @@ function App() {
         <FeatureBento />
         <AiSection />
         <TechSection />
-        <ProductScope />
         <FinalCta />
       </main>
       <Footer />

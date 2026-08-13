@@ -319,7 +319,7 @@ class _HomeTopBar extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                'ThÃ´ng bÃ¡o',
+                'Thông báo',
                 style: TextStyle(
                   color: DivieColors.navy,
                   fontSize: 22,
@@ -328,7 +328,7 @@ class _HomeTopBar extends StatelessWidget {
               ),
               SizedBox(height: 12),
               Text(
-                'ChÆ°a cÃ³ thÃ´ng bÃ¡o má»›i.',
+                'Chưa có thông báo mới.',
                 style: TextStyle(color: DivieColors.muted, fontSize: 16),
               ),
             ],
@@ -399,7 +399,7 @@ class _WeatherCard extends StatelessWidget {
                 Align(
                   alignment: Alignment.topLeft,
                   child: Text(
-                    '25Â°',
+                    '25°',
                     style: TextStyle(
                       color: Colors.white,
                       fontSize: tempSize,
@@ -419,7 +419,7 @@ class _WeatherCard extends StatelessWidget {
                 Align(
                   alignment: Alignment.bottomLeft,
                   child: Text(
-                    'HÃ  Ná»™i',
+                    'Hà Nội',
                     style: TextStyle(
                       color: Colors.white,
                       fontSize: citySize,
@@ -430,7 +430,7 @@ class _WeatherCard extends StatelessWidget {
                 Align(
                   alignment: Alignment.bottomRight,
                   child: Text(
-                    'Nhiá»u mÃ¢y\nH:28Â° | L:22Â°',
+                    'Nhiều mây\nH:28° | L:22°',
                     textAlign: TextAlign.right,
                     style: TextStyle(
                       color: Colors.white,
@@ -455,14 +455,14 @@ class _FeatureGrid extends StatelessWidget {
   final ValueChanged<int> onNavigate;
 
   static const features = [
-    _Feature(Icons.chat_bubble_rounded, 'Tin nháº¯n', action: 'messages'),
-    _Feature(Icons.contacts_rounded, 'Danh báº¡', action: 'contacts'),
-    _Feature(Icons.settings_rounded, 'CÃ i Ä‘áº·t', action: 'settings'),
-    _Feature(Icons.favorite_rounded, 'Sá»©c khá»e', action: 'health'),
-    _Feature(Icons.medication_rounded, 'Nháº¯c thuá»‘c', action: 'medicine'),
+    _Feature(Icons.chat_bubble_rounded, 'Tin nhắn', action: 'messages'),
+    _Feature(Icons.contacts_rounded, 'Danh bạ', action: 'contacts'),
+    _Feature(Icons.settings_rounded, 'Cài đặt', action: 'settings'),
+    _Feature(Icons.favorite_rounded, 'Sức khỏe', action: 'health'),
+    _Feature(Icons.medication_rounded, 'Nhắc thuốc', action: 'medicine'),
     _Feature(
       Icons.emergency_rounded,
-      'Kháº©n cáº¥p',
+      'Khẩn cấp',
       danger: true,
       action: 'emergency',
     ),
@@ -501,18 +501,18 @@ class _FeatureGrid extends StatelessWidget {
     final shouldCall = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Gá»i kháº©n cáº¥p?'),
+        title: const Text('Gọi khẩn cấp?'),
         content: const Text(
-          'DiVie sáº½ má»Ÿ cuá»™c gá»i kháº©n cáº¥p. Chá»‰ tiáº¿p tá»¥c náº¿u báº¡n thá»±c sá»± cáº§n há»— trá»£.',
+          'DiVie sẽ mở cuộc gọi khẩn cấp. Chỉ tiếp tục nếu bạn thực sự cần hỗ trợ.',
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: const Text('Há»§y'),
+            child: const Text('Hủy'),
           ),
           FilledButton(
             onPressed: () => Navigator.pop(context, true),
-            child: const Text('Gá»i ngay'),
+            child: const Text('Gọi ngay'),
           ),
         ],
       ),
@@ -556,9 +556,9 @@ class _FeatureGrid extends StatelessWidget {
                         await EmergencyService.callNumber(contacts[index]);
                       } catch (error) {
                         if (context.mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(content: Text('$error')),
-                          );
+                          ScaffoldMessenger.of(
+                            context,
+                          ).showSnackBar(SnackBar(content: Text('$error')));
                         }
                       }
                     },
@@ -733,14 +733,14 @@ class _MessagesPage extends StatelessWidget {
     }
     if (SupabaseBootstrap.initializationError != null) {
       return const _ConnectionRequiredPage(
-        feature: 'tin nháº¯n',
+        feature: 'tin nhắn',
         icon: Icons.chat_bubble_outline_rounded,
         error:
-            'KhÃ´ng thá»ƒ khá»Ÿi táº¡o káº¿t ná»‘i Supabase. Kiá»ƒm tra láº¡i URL vÃ  khÃ³a public.',
+            'Không thể khởi tạo kết nối Supabase. Kiểm tra lại URL và khóa public.',
       );
     }
     return const _ConnectionRequiredPage(
-      feature: 'tin nháº¯n',
+      feature: 'tin nhắn',
       icon: Icons.chat_bubble_outline_rounded,
     );
   }
@@ -755,7 +755,7 @@ class _ContactsPage extends StatelessWidget {
       return const LiveContactsPage();
     }
     return const _ConnectionRequiredPage(
-      feature: 'danh báº¡',
+      feature: 'danh bạ',
       icon: Icons.contacts_outlined,
     );
   }
@@ -784,7 +784,7 @@ class _ConnectionRequiredPage extends StatelessWidget {
               Icon(icon, color: DivieColors.teal, size: 52),
               const SizedBox(height: 16),
               Text(
-                'ChÆ°a káº¿t ná»‘i $feature',
+                'Chưa kết nối $feature',
                 textAlign: TextAlign.center,
                 style: const TextStyle(
                   color: DivieColors.navy,
@@ -795,7 +795,7 @@ class _ConnectionRequiredPage extends StatelessWidget {
               const SizedBox(height: 8),
               Text(
                 error ??
-                    'MÃ n hÃ¬nh nÃ y chá»‰ hiá»ƒn thá»‹ dá»¯ liá»‡u tháº­t sau khi app káº¿t ná»‘i Supabase. KhÃ´ng dÃ¹ng dá»¯ liá»‡u máº«u.',
+                    'Màn hình này chỉ hiển thị dữ liệu thật sau khi app kết nối Supabase. Không dùng dữ liệu mẫu.',
                 textAlign: TextAlign.center,
                 style: TextStyle(color: DivieColors.muted, fontSize: 15),
               ),
@@ -821,7 +821,7 @@ class _SettingsPage extends StatelessWidget {
     if (context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Báº£n xem trÆ°á»›c chÆ°a káº¿t ná»‘i tÃ i khoáº£n tháº­t.'),
+          content: Text('Bản xem trước chưa kết nối tài khoản thật.'),
         ),
       );
     }
@@ -834,7 +834,7 @@ class _SettingsPage extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           const Text(
-            'CÃ i Ä‘áº·t',
+            'Cài đặt',
             style: TextStyle(
               color: DivieColors.navy,
               fontSize: 40,
@@ -844,7 +844,7 @@ class _SettingsPage extends StatelessWidget {
           ),
           const SizedBox(height: 10),
           const Text(
-            'TÃ i khoáº£n, trá»£ lÃ½ AI vÃ  thiáº¿t bá»‹',
+            'Tài khoản, trợ lý AI và thiết bị',
             style: TextStyle(
               color: DivieColors.muted,
               fontSize: 19,
@@ -861,7 +861,7 @@ class _SettingsPage extends StatelessWidget {
             child: TextButton.icon(
               onPressed: () => _signOut(context),
               icon: const Icon(Icons.logout_rounded),
-              label: const Text('ÄÄƒng xuáº¥t'),
+              label: const Text('Đăng xuất'),
               style: TextButton.styleFrom(foregroundColor: DivieColors.muted),
             ),
           ),
@@ -869,12 +869,12 @@ class _SettingsPage extends StatelessWidget {
           const _PremiumCard(),
           const SizedBox(height: 30),
           const _SettingsSection(
-            title: 'An toÃ n',
+            title: 'An toàn',
             children: [
               _SettingsTile(
                 icon: Icons.emergency_rounded,
-                title: 'LiÃªn há»‡ kháº©n cáº¥p',
-                subtitle: 'CÃ i Ä‘áº·t tá»‘i Ä‘a 5 sá»‘ gá»i tá»± Ä‘á»™ng khi kháº©n cáº¥p',
+                title: 'Liên hệ khẩn cấp',
+                subtitle: 'Cài đặt tối đa 5 số gọi tự động khi khẩn cấp',
                 iconBackground: Color(0xFFFFE6E3),
                 iconColor: DivieColors.danger,
               ),
@@ -882,20 +882,20 @@ class _SettingsPage extends StatelessWidget {
           ),
           const SizedBox(height: 26),
           const _SettingsSection(
-            title: 'Trá»£ lÃ½ vÃ  thiáº¿t bá»‹',
+            title: 'Trợ lý và thiết bị',
             children: [
               _SettingsTile(
                 icon: Icons.record_voice_over_rounded,
-                title: 'Giá»ng nÃ³i trá»£ lÃ½',
-                subtitle: 'Chá»n bá»™ mÃ¡y AI, model vÃ  giá»ng Ä‘á»c',
+                title: 'Giọng nói trợ lý',
+                subtitle: 'Chọn bộ máy AI, model và giọng đọc',
                 iconBackground: Color(0xFFDDF8F8),
                 iconColor: DivieColors.teal,
               ),
               Divider(height: 1, indent: 74),
               _SettingsTile(
                 icon: Icons.home_work_rounded,
-                title: 'MÃ n hÃ¬nh chÃ­nh DiVie',
-                subtitle: 'Cháº¿ Ä‘á»™ launcher/kiosk cho thiáº¿t bá»‹ Android',
+                title: 'Màn hình chính DiVie',
+                subtitle: 'Chế độ launcher/kiosk cho thiết bị Android',
                 iconBackground: Color(0xFFDDF8F8),
                 iconColor: DivieColors.teal,
                 trailing: Switch.adaptive(value: false, onChanged: null),
@@ -904,12 +904,12 @@ class _SettingsPage extends StatelessWidget {
           ),
           const SizedBox(height: 26),
           const _SettingsSection(
-            title: 'TÃ i khoáº£n',
+            title: 'Tài khoản',
             children: [
               _SettingsTile(
                 icon: Icons.workspace_premium_outlined,
-                title: 'GÃ³i sá»­ dá»¥ng',
-                subtitle: 'Miá»…n phÃ­ - cÃ²n giá»›i háº¡n lÆ°á»£t dÃ¹ng AI háº±ng ngÃ y',
+                title: 'Gói sử dụng',
+                subtitle: 'Miễn phí - còn giới hạn lượt dùng AI hằng ngày',
                 iconBackground: Color(0xFFF0F1F1),
                 iconColor: DivieColors.muted,
                 trailing: Text(
@@ -979,7 +979,7 @@ class _RoleSettingTile extends StatelessWidget {
             child: Icon(Icons.swap_horiz_rounded, color: DivieColors.teal),
           ),
           title: const Text(
-            'Vai trÃ² cá»§a thiáº¿t bá»‹',
+            'Vai trò của thiết bị',
             style: TextStyle(
               color: DivieColors.navy,
               fontWeight: FontWeight.w900,
@@ -1021,7 +1021,7 @@ class _AccountCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final email = SupabaseBootstrap.enabled
-        ? Supabase.instance.client.auth.currentUser?.email ?? 'TÃ i khoáº£n DiVie'
+        ? Supabase.instance.client.auth.currentUser?.email ?? 'Tài khoản DiVie'
         : 'test';
     return _SettingsCard(
       child: Row(
@@ -1047,7 +1047,7 @@ class _AccountCard extends StatelessWidget {
                 const SizedBox(height: 7),
                 Text(
                   SupabaseBootstrap.enabled
-                      ? 'TÃ i khoáº£n Ä‘Ã£ xÃ¡c thá»±c'
+                      ? 'Tài khoản đã xác thực'
                       : '+84 1234567890',
                   style: TextStyle(
                     color: DivieColors.muted,
@@ -1091,7 +1091,7 @@ class _PremiumCard extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'NÃ¢ng cáº¥p Premium',
+                  'Nâng cấp Premium',
                   style: TextStyle(
                     color: Colors.black,
                     fontSize: 23,
@@ -1100,7 +1100,7 @@ class _PremiumCard extends StatelessWidget {
                 ),
                 SizedBox(height: 5),
                 Text(
-                  'Má»Ÿ khÃ³a trá»£ lÃ½ AI khÃ´ng giá»›i háº¡n',
+                  'Mở khóa trợ lý AI không giới hạn',
                   style: TextStyle(
                     color: Color(0xFF604619),
                     fontSize: 16,
@@ -1180,14 +1180,14 @@ class _SettingsTile extends StatelessWidget {
 
   VoidCallback? _defaultAction(BuildContext context) {
     if (icon == Icons.emergency_rounded) {
-      return () => Navigator.of(context).push(
-        MaterialPageRoute(builder: (_) => const EmergencyContactsPage()),
-      );
+      return () => Navigator.of(
+        context,
+      ).push(MaterialPageRoute(builder: (_) => const EmergencyContactsPage()));
     }
     if (icon == Icons.record_voice_over_rounded) {
-      return () => Navigator.of(context).push(
-        MaterialPageRoute(builder: (_) => const VoiceAssistantPage()),
-      );
+      return () => Navigator.of(
+        context,
+      ).push(MaterialPageRoute(builder: (_) => const VoiceAssistantPage()));
     }
     if (icon == Icons.home_work_rounded) {
       return () async {
@@ -1195,7 +1195,9 @@ class _SettingsTile extends StatelessWidget {
         if (!enabled) await AndroidLauncherService.requestHomeRole();
         if (context.mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Đã mở phần chọn màn hình chính của Android.')),
+            const SnackBar(
+              content: Text('Đã mở phần chọn màn hình chính của Android.'),
+            ),
           );
         }
       };
@@ -1211,48 +1213,48 @@ class _SettingsTile extends StatelessWidget {
         onTap: _defaultAction(context),
         borderRadius: BorderRadius.circular(18),
         child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          Container(
-            width: 54,
-            height: 54,
-            decoration: BoxDecoration(
-              color: iconBackground,
-              borderRadius: BorderRadius.circular(18),
-            ),
-            child: Icon(icon, color: iconColor, size: 29),
-          ),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: const TextStyle(
-                    color: DivieColors.navy,
-                    fontSize: 18,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-                const SizedBox(height: 5),
-                Text(
-                  subtitle,
-                  style: const TextStyle(
-                    color: DivieColors.muted,
-                    fontSize: 15,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          trailing ??
-              const Icon(
-                Icons.chevron_right_rounded,
-                color: DivieColors.muted,
-                size: 32,
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            Container(
+              width: 54,
+              height: 54,
+              decoration: BoxDecoration(
+                color: iconBackground,
+                borderRadius: BorderRadius.circular(18),
               ),
+              child: Icon(icon, color: iconColor, size: 29),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: const TextStyle(
+                      color: DivieColors.navy,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  const SizedBox(height: 5),
+                  Text(
+                    subtitle,
+                    style: const TextStyle(
+                      color: DivieColors.muted,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            trailing ??
+                const Icon(
+                  Icons.chevron_right_rounded,
+                  color: DivieColors.muted,
+                  size: 32,
+                ),
           ],
         ),
       ),

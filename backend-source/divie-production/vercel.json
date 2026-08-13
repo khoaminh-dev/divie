@@ -1,0 +1,10 @@
+{
+  "buildCommand": "npm run build",
+  "rewrites": [
+    { "source": "/health", "destination": "/api/index.ts" },
+    { "source": "/ready", "destination": "/api/index.ts" },
+    { "source": "/api/:path*", "destination": "/api/index.ts" },
+    { "source": "/ocr/:path*", "destination": "/api/index.ts" },
+    { "source": "/openai/realtime/client-secret", "destination": "/api/index.ts" }
+  ]
+}

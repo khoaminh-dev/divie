@@ -22,3 +22,25 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Local agent access guide and SSH keys (never commit)
+agent-guildline/
+
+# Local backend checkouts used for analysis only
+backend-source/
+
+# DiVie production serverless source is kept locally for reproducible deploys.
+# Secrets and generated deployment files remain ignored.
+!backend-source/
+!backend-source/divie-production/
+!backend-source/divie-production/**
+backend-source/divie-production/node_modules/
+backend-source/divie-production/.vercel/
+backend-source/divie-production/.env*
+!backend-source/divie-production/.env.example
+
+# Local emulator screenshots
+app/tmp-*.png
+
+# Flutter tooling cache generated on this workstation
+app/.tool-cache/

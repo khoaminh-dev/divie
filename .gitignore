@@ -44,3 +44,18 @@ app/tmp-*.png
 
 # Flutter tooling cache generated on this workstation
 app/.tool-cache/
+
+# Local secrets and deployment metadata in any nested project
+**/.env
+**/.env.*
+!**/.env.example
+**/.vercel/
+**/supabase/.temp/
+**/*.tsbuildinfo
+
+# Imported VIEGRAND repositories are kept locally for reference only
+backend-source/admin-api/
+backend-source/voice-backend/
+
+# Local emulator screenshots
+app/chat-after-*.png

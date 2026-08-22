@@ -1,0 +1,14 @@
+http:
+  routers:
+    divie-admin-router:
+      rule: "Host(`admin.divie.site`)"
+      entryPoints:
+        - websecure
+      tls:
+        certResolver: letsencrypt
+      service: divie-admin-service
+  services:
+    divie-admin-service:
+      loadBalancer:
+        servers:
+          - url: "http://divie-admin:80"

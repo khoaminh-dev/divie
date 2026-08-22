@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
-import '../../core/device/emergency_contacts_store.dart';
+import '../../core/auth/supabase_bootstrap.dart';
+import '../../core/data/emergency_contacts_data_service.dart';
 import '../../main.dart';
 
 class EmergencyContactsPage extends StatefulWidget {
@@ -11,7 +13,7 @@ class EmergencyContactsPage extends StatefulWidget {
 }
 
 class _EmergencyContactsPageState extends State<EmergencyContactsPage> {
-  final _store = EmergencyContactsStore();
+  late final EmergencyContactsDataService _service;
   final _controllers = List.generate(5, (_) => TextEditingController());
   bool _loading = true;
   bool _saving = false;
@@ -19,11 +21,14 @@ class _EmergencyContactsPageState extends State<EmergencyContactsPage> {
   @override
   void initState() {
     super.initState();
+    _service = EmergencyContactsDataService(
+      client: SupabaseBootstrap.enabled ? Supabase.instance.client : null,
+    );
     _load();
   }
 
   Future<void> _load() async {
-    final contacts = await _store.load();
+    final contacts = await _service.load();
     for (var index = 0; index < contacts.length && index < 5; index++) {
       _controllers[index].text = contacts[index];
     }
@@ -32,7 +37,9 @@ class _EmergencyContactsPageState extends State<EmergencyContactsPage> {
 
   Future<void> _save() async {
     setState(() => _saving = true);
-    await _store.save(_controllers.map((controller) => controller.text).toList());
+    await _service.save(
+      _controllers.map((controller) => controller.text).toList(),
+    );
     if (!mounted) return;
     setState(() => _saving = false);
     ScaffoldMessenger.of(context).showSnackBar(
@@ -59,7 +66,9 @@ class _EmergencyContactsPageState extends State<EmergencyContactsPage> {
         elevation: 0,
       ),
       body: _loading
-          ? const Center(child: CircularProgressIndicator(color: DivieColors.teal))
+          ? const Center(
+              child: CircularProgressIndicator(color: DivieColors.teal),
+            )
           : ListView(
               padding: const EdgeInsets.fromLTRB(20, 8, 20, 28),
               children: [
@@ -76,7 +85,9 @@ class _EmergencyContactsPageState extends State<EmergencyContactsPage> {
                       keyboardType: TextInputType.phone,
                       decoration: InputDecoration(
                         labelText: 'Số liên hệ ${index + 1}',
-                        hintText: index == 0 ? 'Mặc định 115 nếu để trống' : 'Không bắt buộc',
+                        hintText: index == 0
+                            ? 'Mặc định 115 nếu để trống'
+                            : 'Không bắt buộc',
                         prefixIcon: const Icon(Icons.phone_rounded),
                         filled: true,
                         fillColor: Colors.white,
@@ -95,7 +106,9 @@ class _EmergencyContactsPageState extends State<EmergencyContactsPage> {
                   style: FilledButton.styleFrom(
                     backgroundColor: DivieColors.teal,
                     minimumSize: const Size.fromHeight(54),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(18),
+                    ),
                   ),
                 ),
               ],

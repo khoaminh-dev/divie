@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -8,21 +10,41 @@ import 'features/chat/live_chat_pages.dart';
 import 'features/health/health_capture_page.dart';
 import 'features/reminders/notification_service.dart';
 import 'features/reminders/reminders_page.dart';
+import 'core/data/reminder_data_service.dart';
 import 'core/device/emergency_service.dart';
 import 'core/data/device_registration_service.dart';
+import 'core/data/account_profile_service.dart';
 import 'core/roles/app_role.dart';
 import 'features/auth/role_selection_page.dart';
 import 'features/assistant/voice_assistant_page.dart';
-import 'core/device/emergency_contacts_store.dart';
+import 'core/data/emergency_contacts_data_service.dart';
 import 'core/device/android_launcher_service.dart';
 import 'features/settings/emergency_contacts_page.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   AppConfig.assertSafeConfiguration();
-  await SupabaseBootstrap.initialize();
-  await NotificationService.instance.initialize();
+  try {
+    await SupabaseBootstrap.initialize().timeout(const Duration(seconds: 10));
+  } catch (error, stackTrace) {
+    debugPrint('DiVie Supabase bootstrap failed: $error');
+    debugPrintStack(stackTrace: stackTrace);
+  }
   runApp(const DivieApp());
+  unawaited(_initializeNotificationsSafely());
+}
+
+Future<void> _initializeNotificationsSafely() async {
+  try {
+    await NotificationService.instance
+        .initialize()
+        .timeout(const Duration(seconds: 10));
+  } catch (error, stackTrace) {
+    // Notification permission/device issues must not prevent the app shell
+    // from opening. Reminder records remain available in Supabase.
+    debugPrint('DiVie notification bootstrap failed: $error');
+    debugPrintStack(stackTrace: stackTrace);
+  }
 }
 
 class DivieApp extends StatelessWidget {
@@ -83,6 +105,16 @@ class _RoleGateState extends State<_RoleGate> {
   }
 
   Future<void> _load() async {
+    if (SupabaseBootstrap.enabled &&
+        Supabase.instance.client.auth.currentUser != null) {
+      try {
+        await AccountProfileService(
+          Supabase.instance.client,
+        ).ensureCurrentProfile();
+      } catch (_) {
+        // Profile sync is best effort; it must not block the app shell.
+      }
+    }
     final role = await _store.load();
     if (role != null) await _syncDeviceRole(role);
     if (!mounted) return;
@@ -155,6 +187,67 @@ class DivieShell extends StatefulWidget {
 
 class _DivieShellState extends State<DivieShell> {
   int _selectedIndex = 0;
+  RealtimeChannel? _reminderChannel;
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_syncReminders());
+    _subscribeReminderSync();
+  }
+
+  void _subscribeReminderSync() {
+    if (!SupabaseBootstrap.enabled) return;
+    final client = Supabase.instance.client;
+    final user = client.auth.currentUser;
+    if (user == null) return;
+    _reminderChannel = client
+        .channel('divie-global-reminder-sync-${user.id}')
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'medicine_reminders',
+          filter: PostgresChangeFilter(
+            type: PostgresChangeFilterType.eq,
+            column: 'account_id',
+            value: user.id,
+          ),
+          callback: (_) => unawaited(_syncReminders()),
+        )
+        .subscribe();
+  }
+
+  Future<void> _syncReminders() async {
+    if (!SupabaseBootstrap.enabled) return;
+    try {
+      if (widget.role == AppRole.family) {
+        await NotificationService.instance.cancelAll();
+        return;
+      }
+      final service = ReminderDataService(client: Supabase.instance.client);
+      final reminders = await service.load();
+      for (final reminder in reminders) {
+        await NotificationService.instance.trySchedule(reminder);
+      }
+    } catch (_) {
+      // A temporary sync error must not block the main app shell.
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant DivieShell oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.role != widget.role) unawaited(_syncReminders());
+  }
+
+  @override
+  void dispose() {
+    final channel = _reminderChannel;
+    if (channel != null) {
+      unawaited(Supabase.instance.client.removeChannel(channel));
+    }
+    super.dispose();
+  }
 
   void _select(int index) {
     if (index == 2) {
@@ -251,55 +344,81 @@ class _HomeTopBar extends StatelessWidget {
               icon: Icons.notifications_none_rounded,
               onPressed: () => _showNotifications(context),
             ),
-            InkWell(
-              onTap: () => onNavigate(4),
-              borderRadius: BorderRadius.circular(30),
-              child: Container(
-                height: 52,
-                padding: const EdgeInsets.only(left: 20, right: 6),
-                decoration: BoxDecoration(
-                  color: Colors.white,
+            FutureBuilder<AccountProfile?>(
+              future: SupabaseBootstrap.enabled
+                  ? AccountProfileService(
+                      Supabase.instance.client,
+                    ).loadCurrent()
+                  : null,
+              builder: (context, snapshot) {
+                final authUser = SupabaseBootstrap.enabled
+                    ? Supabase.instance.client.auth.currentUser
+                    : null;
+                final email = authUser?.email?.trim();
+                final emailName = email == null || email.isEmpty
+                    ? null
+                    : email.split('@').first.trim();
+                final profileName = snapshot.data?.name.trim();
+                final name = _usableAccountName(profileName) ??
+                    _usableAccountName(emailName) ??
+                    role.label;
+                return InkWell(
+                  onTap: () => onNavigate(4),
                   borderRadius: BorderRadius.circular(30),
-                  boxShadow: [_SoftShadow()],
-                ),
-                child: Row(
-                  children: [
-                    const Text(
-                      'test',
-                      style: TextStyle(
-                        color: DivieColors.teal,
-                        fontSize: 21,
-                        fontWeight: FontWeight.w800,
-                      ),
+                  child: Container(
+                    height: 52,
+                    padding: EdgeInsets.only(left: compact ? 12 : 20, right: 6),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(30),
+                      boxShadow: [_SoftShadow()],
                     ),
-                    if (!compact) ...[
-                      const SizedBox(width: 8),
-                      Text(
-                        role.label,
-                        style: const TextStyle(
-                          color: DivieColors.muted,
-                          fontSize: 11,
-                          fontWeight: FontWeight.w700,
+                    child: Row(
+                      children: [
+                        ConstrainedBox(
+                          constraints: BoxConstraints(
+                            maxWidth: compact ? 92 : 150,
+                          ),
+                          child: Text(
+                            name,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: DivieColors.teal,
+                              fontSize: 21,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
                         ),
-                      ),
-                    ],
-                    const SizedBox(width: 10),
-                    Container(
-                      width: 42,
-                      height: 42,
-                      decoration: const BoxDecoration(
-                        color: Color(0xFFF0F1F1),
-                        shape: BoxShape.circle,
-                      ),
-                      child: const Icon(
-                        Icons.person,
-                        color: Color(0xFF777777),
-                        size: 27,
-                      ),
+                        if (!compact) ...[
+                          const SizedBox(width: 8),
+                          Text(
+                            role.label,
+                            style: const TextStyle(
+                              color: DivieColors.muted,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ],
+                        const SizedBox(width: 10),
+                        Container(
+                          width: 42,
+                          height: 42,
+                          decoration: const BoxDecoration(
+                            color: Color(0xFFF0F1F1),
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Icon(
+                            Icons.person,
+                            color: Color(0xFF777777),
+                            size: 27,
+                          ),
+                        ),
+                      ],
                     ),
-                  ],
-                ),
-              ),
+                  ),
+                );
+              },
             ),
           ],
         );
@@ -519,7 +638,9 @@ class _FeatureGrid extends StatelessWidget {
     );
     if (shouldCall != true || !context.mounted) return;
     try {
-      final contacts = await EmergencyContactsStore().load();
+      final contacts = await EmergencyContactsDataService(
+        client: SupabaseBootstrap.enabled ? Supabase.instance.client : null,
+      ).load();
       final first = contacts.isEmpty ? '115' : contacts.first;
       await EmergencyService.callNumber(first);
       if (!context.mounted || contacts.length < 2) return;
@@ -814,16 +935,26 @@ class _SettingsPage extends StatelessWidget {
   final ValueChanged<AppRole> onRoleChanged;
 
   Future<void> _signOut(BuildContext context) async {
-    if (SupabaseBootstrap.enabled) {
-      await Supabase.instance.client.auth.signOut();
-      return;
-    }
-    if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Bản xem trước chưa kết nối tài khoản thật.'),
-        ),
-      );
+    try {
+      if (SupabaseBootstrap.enabled) {
+        await Supabase.instance.client.auth.signOut();
+        return;
+      }
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Bản xem trước chưa kết nối tài khoản thật.'),
+          ),
+        );
+      }
+    } catch (_) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Chưa thể đăng xuất. Vui lòng thử lại.'),
+          ),
+        );
+      }
     }
   }
 
@@ -852,19 +983,30 @@ class _SettingsPage extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 28),
-          const _AccountCard(),
-          const SizedBox(height: 12),
-          _RoleSettingTile(role: role, onRoleChanged: onRoleChanged),
-          const SizedBox(height: 8),
-          Align(
-            alignment: Alignment.centerLeft,
-            child: TextButton.icon(
+          _AccountCard(role: role),
+          const SizedBox(height: 14),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
               onPressed: () => _signOut(context),
               icon: const Icon(Icons.logout_rounded),
-              label: const Text('Đăng xuất'),
-              style: TextButton.styleFrom(foregroundColor: DivieColors.muted),
+              label: const Text('Đăng xuất tài khoản'),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: DivieColors.danger,
+                side: const BorderSide(color: DivieColors.danger),
+                minimumSize: const Size.fromHeight(52),
+                textStyle: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w800,
+                ),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(18),
+                ),
+              ),
             ),
           ),
+          const SizedBox(height: 14),
+          _RoleSettingTile(role: role, onRoleChanged: onRoleChanged),
           const SizedBox(height: 22),
           const _PremiumCard(),
           const SizedBox(height: 30),
@@ -1016,57 +1158,83 @@ class _SimplePage extends StatelessWidget {
 }
 
 class _AccountCard extends StatelessWidget {
-  const _AccountCard();
+  const _AccountCard({required this.role});
+
+  final AppRole role;
 
   @override
   Widget build(BuildContext context) {
-    final email = SupabaseBootstrap.enabled
-        ? Supabase.instance.client.auth.currentUser?.email ?? 'Tài khoản DiVie'
-        : 'test';
-    return _SettingsCard(
-      child: Row(
-        children: [
-          const CircleAvatar(
-            radius: 39,
-            backgroundColor: DivieColors.paleBlue,
-            child: Icon(Icons.person, color: DivieColors.teal, size: 40),
-          ),
-          const SizedBox(width: 20),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  email,
-                  style: TextStyle(
-                    color: DivieColors.navy,
-                    fontSize: 24,
-                    fontWeight: FontWeight.w900,
-                  ),
+    return FutureBuilder<AccountProfile?>(
+      future: SupabaseBootstrap.enabled
+          ? AccountProfileService(Supabase.instance.client).loadCurrent()
+          : null,
+      builder: (context, snapshot) {
+        final profile = snapshot.data;
+        final authUser = SupabaseBootstrap.enabled
+            ? Supabase.instance.client.auth.currentUser
+            : null;
+        final authEmail = authUser?.email?.trim();
+        final emailName = authEmail == null || authEmail.isEmpty
+            ? null
+            : authEmail.split('@').first.trim();
+        final name = _usableAccountName(profile?.name) ??
+            _usableAccountName(emailName) ??
+            role.label;
+        final email =
+            profile?.email ??
+            authEmail ??
+            'Chưa có email';
+        return _SettingsCard(
+          child: Row(
+            children: [
+              const CircleAvatar(
+                radius: 39,
+                backgroundColor: DivieColors.paleBlue,
+                child: Icon(Icons.person, color: DivieColors.teal, size: 40),
+              ),
+              const SizedBox(width: 20),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      name,
+                      style: TextStyle(
+                        color: DivieColors.navy,
+                        fontSize: 24,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    const SizedBox(height: 7),
+                    Text(
+                      email,
+                      style: TextStyle(
+                        color: DivieColors.muted,
+                        fontSize: 18,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 7),
-                Text(
-                  SupabaseBootstrap.enabled
-                      ? 'Tài khoản đã xác thực'
-                      : '+84 1234567890',
-                  style: TextStyle(
-                    color: DivieColors.muted,
-                    fontSize: 18,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ],
-            ),
+              ),
+              const Icon(
+                Icons.chevron_right_rounded,
+                color: DivieColors.muted,
+                size: 34,
+              ),
+            ],
           ),
-          const Icon(
-            Icons.chevron_right_rounded,
-            color: DivieColors.muted,
-            size: 34,
-          ),
-        ],
-      ),
+        );
+      },
     );
   }
+}
+
+String? _usableAccountName(String? value) {
+  final cleaned = value?.trim();
+  if (cleaned == null || cleaned.isEmpty) return null;
+  if (cleaned.toLowerCase() == 'tài khoản') return null;
+  return cleaned;
 }
 
 class _PremiumCard extends StatelessWidget {

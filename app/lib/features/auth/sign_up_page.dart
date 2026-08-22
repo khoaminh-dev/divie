@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../core/data/account_profile_service.dart';
 import '../../main.dart';
 
 class SignUpPage extends StatefulWidget {
@@ -50,6 +51,10 @@ class _SignUpPageState extends State<SignUpPage> {
       // disabled in Supabase, signup returns an active session immediately.
       // Do not send the user into an email-confirmation flow here.
       if (response.session != null) {
+        await AccountProfileService(
+          Supabase.instance.client,
+        ).ensureCurrentProfile();
+        if (!mounted) return;
         Navigator.of(context).pop();
       } else if (mounted) {
         setState(

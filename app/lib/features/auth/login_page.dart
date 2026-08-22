@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../core/data/account_profile_service.dart';
 import '../../main.dart';
 import 'sign_up_page.dart';
 
@@ -34,10 +35,15 @@ class _LoginPageState extends State<LoginPage> {
     });
 
     try {
-      await Supabase.instance.client.auth.signInWithPassword(
+      final response = await Supabase.instance.client.auth.signInWithPassword(
         email: _emailController.text.trim(),
         password: _passwordController.text,
       );
+      if (response.user != null) {
+        await AccountProfileService(
+          Supabase.instance.client,
+        ).ensureCurrentProfile();
+      }
     } on AuthException catch (error) {
       if (mounted) setState(() => _errorMessage = _friendlyAuthError(error));
     } catch (_) {

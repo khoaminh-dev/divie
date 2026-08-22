@@ -1,7 +1,9 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_contacts/flutter_contacts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/data/app_data_service.dart';
 import '../../main.dart';
@@ -18,6 +20,9 @@ class _LiveContactsPageState extends State<LiveContactsPage> {
   late Future<List<ContactRecord>> _future;
   final _searchController = TextEditingController();
   String _query = '';
+  List<Contact> _deviceContacts = const [];
+  bool _deviceContactsLoading = true;
+  bool _deviceContactsPermission = false;
   Timer? _refreshTimer;
   RealtimeChannel? _realtimeChannel;
 
@@ -26,6 +31,7 @@ class _LiveContactsPageState extends State<LiveContactsPage> {
     super.initState();
     _service = AppDataService(Supabase.instance.client);
     _future = _service.loadContacts();
+    unawaited(_loadDeviceContacts());
     _realtimeChannel = Supabase.instance.client
         .channel('divie-contacts')
         .onPostgresChanges(
@@ -45,6 +51,41 @@ class _LiveContactsPageState extends State<LiveContactsPage> {
   void _reload() {
     if (!mounted) return;
     setState(() => _future = _service.loadContacts());
+  }
+
+  Future<void> _loadDeviceContacts() async {
+    try {
+      final granted = await FlutterContacts.requestPermission(readonly: true);
+      if (!granted) {
+        if (mounted) {
+          setState(() {
+            _deviceContactsPermission = false;
+            _deviceContactsLoading = false;
+          });
+        }
+        return;
+      }
+      final contacts = await FlutterContacts.getContacts(
+        withProperties: true,
+        sorted: true,
+        deduplicateProperties: true,
+      );
+      if (!mounted) return;
+      setState(() {
+        _deviceContacts = contacts
+            .where((contact) => contact.displayName.trim().isNotEmpty)
+            .toList(growable: false);
+        _deviceContactsPermission = true;
+        _deviceContactsLoading = false;
+      });
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          _deviceContactsPermission = false;
+          _deviceContactsLoading = false;
+        });
+      }
+    }
   }
 
   void _search(String value) =>
@@ -89,53 +130,77 @@ class _LiveContactsPageState extends State<LiveContactsPage> {
                     contact.email.toLowerCase().contains(_query),
               )
               .toList();
-          if (contacts.isEmpty) {
+          final deviceContacts = _deviceContacts
+              .where(
+                (contact) =>
+                    _query.isEmpty ||
+                    contact.displayName.toLowerCase().contains(_query) ||
+                    contact.phones.any(
+                      (phone) => phone.number.toLowerCase().contains(_query),
+                    ) ||
+                    contact.emails.any(
+                      (email) => email.address.toLowerCase().contains(_query),
+                    ),
+              )
+              .toList();
+          if (contacts.isEmpty && deviceContacts.isEmpty) {
             return const _EmptyState(
               icon: Icons.contacts_outlined,
-              title: 'Chưa có danh bạ',
-              subtitle: 'Danh bạ sẽ hiển thị khi có người dùng trong hệ thống.',
+              title: 'Chưa có liên hệ',
+              subtitle: 'Cho phép truy cập danh bạ để tìm người thân nhanh hơn.',
             );
           }
-          return ListView.separated(
+          return ListView(
             padding: const EdgeInsets.only(bottom: 24),
-            itemCount: contacts.length,
-            separatorBuilder: (_, _) => const SizedBox(height: 10),
-            itemBuilder: (context, index) {
-              final contact = contacts[index];
-              return _LiveContactTile(
-                contact: contact,
-                onTap: () async {
-                  try {
-                    final roomId = await _service.createOrGetDirectChat(
-                      contact.id,
-                    );
-                    if (!context.mounted) return;
-                    Navigator.of(context).push(
-                      MaterialPageRoute(
-                        builder: (_) => _ChatDetailPage(
-                          roomId: roomId,
-                          title: contact.name,
-                        ),
-                      ),
-                    );
-                  } on PostgrestException catch (error) {
-                    if (context.mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text(
-                            'Không thể mở cuộc trò chuyện: ${error.message}',
-                          ),
-                        ),
-                      );
-                    }
-                  }
-                },
-              );
-            },
+            children: [
+              if (!_deviceContactsPermission && !_deviceContactsLoading)
+                _DeviceContactsPermissionCard(onPressed: _loadDeviceContacts),
+              if (_deviceContactsPermission && deviceContacts.isNotEmpty) ...[
+                const _LiveSectionTitle(
+                  title: 'Danh bạ trên điện thoại',
+                  subtitle: 'Dữ liệu chỉ đọc trên máy, không tự tải lên hệ thống.',
+                ),
+                for (final contact in deviceContacts) ...[
+                  _DeviceContactTile(contact: contact),
+                  const SizedBox(height: 10),
+                ],
+                if (contacts.isNotEmpty) const SizedBox(height: 12),
+              ],
+              if (contacts.isNotEmpty) ...[
+                const _LiveSectionTitle(
+                  title: 'Người dùng DiVie',
+                  subtitle: 'Chọn một người để bắt đầu cuộc trò chuyện.',
+                ),
+                for (final contact in contacts) ...[
+                  _LiveContactTile(
+                    contact: contact,
+                    onTap: () => _openChat(context, contact),
+                  ),
+                  const SizedBox(height: 10),
+                ],
+              ],
+            ],
           );
         },
       ),
     );
+  }
+
+  Future<void> _openChat(BuildContext context, ContactRecord contact) async {
+    try {
+      final roomId = await _service.createOrGetDirectChat(contact.id);
+      if (!context.mounted) return;
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => _ChatDetailPage(roomId: roomId, title: contact.name),
+        ),
+      );
+    } on PostgrestException catch (error) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Không thể mở cuộc trò chuyện: ${error.message}')),
+      );
+    }
   }
 }
 
@@ -518,6 +583,187 @@ class _LivePageFrame extends StatelessWidget {
   }
 }
 
+class _DeviceContactsPermissionCard extends StatelessWidget {
+  const _DeviceContactsPermissionCard({required this.onPressed});
+
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 20),
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: const Color(0xFFD7E9E9)),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.contacts_outlined, color: DivieColors.teal, size: 28),
+          const SizedBox(width: 14),
+          const Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Kết nối danh bạ điện thoại',
+                  style: TextStyle(
+                    color: DivieColors.navy,
+                    fontSize: 17,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                SizedBox(height: 4),
+                Text(
+                  'Cho phép DiVie đọc tên và số điện thoại để tìm người thân.',
+                  style: TextStyle(color: DivieColors.muted, fontSize: 14),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 10),
+          FilledButton(
+            onPressed: onPressed,
+            style: ButtonStyle(
+              backgroundColor: WidgetStatePropertyAll(DivieColors.teal),
+              padding: WidgetStatePropertyAll(
+                EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+              ),
+            ),
+            child: const Text('Cho phép'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _LiveSectionTitle extends StatelessWidget {
+  const _LiveSectionTitle({required this.title, required this.subtitle});
+
+  final String title;
+  final String subtitle;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: const TextStyle(
+              color: DivieColors.navy,
+              fontSize: 19,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          const SizedBox(height: 3),
+          Text(
+            subtitle,
+            style: const TextStyle(color: DivieColors.muted, fontSize: 13),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _DeviceContactTile extends StatelessWidget {
+  const _DeviceContactTile({required this.contact});
+
+  final Contact contact;
+
+  @override
+  Widget build(BuildContext context) {
+    final phone = contact.phones
+        .map((item) => item.number.trim())
+        .firstWhere((value) => value.isNotEmpty, orElse: () => '');
+    final email = contact.emails
+        .map((item) => item.address.trim())
+        .firstWhere((value) => value.isNotEmpty, orElse: () => '');
+    final secondary = phone.isNotEmpty ? phone : email;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Row(
+        children: [
+          _LiveInitialAvatar(_initials(contact.displayName)),
+          const SizedBox(width: 13),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  contact.displayName,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: DivieColors.navy,
+                    fontSize: 17,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                if (secondary.isNotEmpty) ...[
+                  const SizedBox(height: 3),
+                  Text(
+                    secondary,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(color: DivieColors.muted, fontSize: 14),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          OutlinedButton(
+            onPressed: phone.isEmpty
+                ? null
+                : () => _inviteBySms(context, phone),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: DivieColors.teal,
+              side: const BorderSide(color: DivieColors.teal),
+              minimumSize: const Size(0, 40),
+              padding: const EdgeInsets.symmetric(horizontal: 13),
+            ),
+            child: const Text('Mời'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _inviteBySms(BuildContext context, String phone) async {
+    final uri = Uri(
+      scheme: 'sms',
+      path: phone,
+      queryParameters: {'body': 'Mời bạn kết nối với tôi trên DiVie.'},
+    );
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri);
+      return;
+    }
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Thiết bị chưa có ứng dụng nhắn tin.')),
+      );
+    }
+  }
+}
+
+String _initials(String name) {
+  final parts = name.trim().split(RegExp(r'\s+'));
+  if (parts.isEmpty || parts.first.isEmpty) return '?';
+  if (parts.length == 1) return parts.first.substring(0, 1).toUpperCase();
+  return '${parts.first.substring(0, 1)}${parts.last.substring(0, 1)}'
+      .toUpperCase();
+}
+
 class _LiveContactTile extends StatelessWidget {
   const _LiveContactTile({required this.contact, required this.onTap});
 
@@ -553,12 +799,23 @@ class _LiveContactTile extends StatelessWidget {
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    contact.phone,
+                    contact.email.isNotEmpty ? contact.email : contact.phone,
                     style: const TextStyle(
                       color: DivieColors.muted,
                       fontSize: 15,
                     ),
                   ),
+                  if (contact.email.isNotEmpty &&
+                      contact.phone != 'Chưa cập nhật số điện thoại') ...[
+                    const SizedBox(height: 2),
+                    Text(
+                      contact.phone,
+                      style: const TextStyle(
+                        color: DivieColors.muted,
+                        fontSize: 13,
+                      ),
+                    ),
+                  ],
                 ],
               ),
             ),

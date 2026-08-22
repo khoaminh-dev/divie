@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
@@ -8,7 +9,21 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../core/auth/supabase_bootstrap.dart';
 import '../../core/config/app_config.dart';
+import '../../core/data/reminder_data_service.dart';
 import '../../main.dart';
+import '../reminders/notification_service.dart';
+import '../reminders/reminder_command_parser.dart';
+import '../reminders/reminder_model.dart';
+
+class _AssistantRequestException implements Exception {
+  const _AssistantRequestException(this.message, {this.statusCode});
+
+  final String message;
+  final int? statusCode;
+
+  @override
+  String toString() => message;
+}
 
 class VoiceAssistantPage extends StatefulWidget {
   const VoiceAssistantPage({super.key});
@@ -23,12 +38,20 @@ class _VoiceAssistantPageState extends State<VoiceAssistantPage> {
   bool _ready = false;
   bool _listening = false;
   bool _sending = false;
+  bool _submittedCurrentSession = false;
   String _transcript = '';
   String _answer = '';
+  ReminderDraft? _pendingReminder;
+  final List<Map<String, String>> _conversation = [];
+  late final ReminderDataService _reminderService;
 
   @override
   void initState() {
     super.initState();
+    _reminderService = ReminderDataService(
+      client: SupabaseBootstrap.enabled ? Supabase.instance.client : null,
+      allowLocalFallback: false,
+    );
     _prepare();
   }
 
@@ -42,15 +65,14 @@ class _VoiceAssistantPageState extends State<VoiceAssistantPage> {
   Future<void> _toggleListening() async {
     if (!_ready || _sending) return;
     if (_listening) {
-      await _speech.stop();
-      if (mounted) setState(() => _listening = false);
-      if (_transcript.trim().isNotEmpty) await _ask(_transcript.trim());
+      await _submitCurrentTranscript();
       return;
     }
     setState(() {
       _transcript = '';
       _answer = '';
       _listening = true;
+      _submittedCurrentSession = false;
     });
     await _speech.listen(
       listenOptions: SpeechListenOptions(
@@ -63,48 +85,290 @@ class _VoiceAssistantPageState extends State<VoiceAssistantPage> {
         if (!mounted) return;
         setState(() => _transcript = result.recognizedWords);
         if (result.finalResult) {
-          _speech.stop();
-          setState(() => _listening = false);
-          if (_transcript.trim().isNotEmpty) _ask(_transcript.trim());
+          unawaited(_submitCurrentTranscript());
         }
       },
     );
   }
 
+  Future<void> _submitCurrentTranscript() async {
+    if (_submittedCurrentSession) return;
+    final text = _transcript.trim();
+    if (text.isEmpty) return;
+
+    // speech_to_text may deliver both a final callback and a stop callback.
+    // Mark the session before awaiting anything so only one request can leave
+    // this screen for one spoken command.
+    _submittedCurrentSession = true;
+    await _speech.stop();
+    if (mounted) setState(() => _listening = false);
+    await _ask(text);
+  }
+
+  String _cleanAssistantText(String value) {
+    var cleaned = value
+        .replaceAll(
+          RegExp(r'<think>[\s\S]*?</think>', caseSensitive: false),
+          '',
+        )
+        .replaceAll(RegExp(r'<think>[\s\S]*$', caseSensitive: false), '')
+        .replaceAll(RegExp(r'```[a-zA-Z0-9_-]*\s*'), '')
+        .replaceAll('```', '')
+        .replaceAll('**', '')
+        .replaceAll(RegExp(r'^\s*#{1,6}\s*', multiLine: true), '')
+        .replaceAll(RegExp(r'^\s*[-*]\s+', multiLine: true), '• ')
+        .replaceAll(RegExp(r'\n{3,}'), '\n\n')
+        .trim();
+    cleaned = cleaned.replaceAllMapped(
+      RegExp(r'\*\*(.*?)\*\*', dotAll: true),
+      (match) => match.group(1) ?? '',
+    );
+    cleaned = cleaned.replaceAllMapped(
+      RegExp(r'__(.*?)__', dotAll: true),
+      (match) => match.group(1) ?? '',
+    );
+    cleaned = cleaned.replaceAllMapped(
+      RegExp(r'`([^`]*)`'),
+      (match) => match.group(1) ?? '',
+    );
+    cleaned = cleaned.replaceAllMapped(
+      RegExp(r'\[([^\]]+)\]\([^)]+\)'),
+      (match) => match.group(1) ?? '',
+    );
+    return cleaned
+        .replaceAll(RegExp(r'[$#*_`{}\[\]|<>]'), '')
+        .replaceAll(RegExp(r'\s+([,.!?;:])'), r'\1')
+        .replaceAll(RegExp(r'\n{3,}'), '\n\n')
+        .trim();
+  }
+
+  String _extractAssistantText(Object? value) {
+    if (value == null) return '';
+    if (value is String) return value;
+    if (value is num || value is bool) return value.toString();
+    if (value is List) {
+      return value
+          .map(_extractAssistantText)
+          .where((item) => item.trim().isNotEmpty)
+          .join('\n');
+    }
+    if (value is Map) {
+      const preferredKeys = [
+        'content',
+        'answer',
+        'reply',
+        'text',
+        'message',
+        'output',
+      ];
+      for (final key in preferredKeys) {
+        final extracted = _extractAssistantText(value[key]);
+        if (extracted.trim().isNotEmpty) return extracted;
+      }
+      final nested = _extractAssistantText(value['data']);
+      if (nested.trim().isNotEmpty) return nested;
+      final choices = value['choices'];
+      if (choices is List && choices.isNotEmpty) {
+        final choiceText = _extractAssistantText(choices.first);
+        if (choiceText.trim().isNotEmpty) return choiceText;
+      }
+    }
+    return '';
+  }
+
+  String _extractErrorText(Object? value) {
+    if (value is String && value.trim().isNotEmpty) return value.trim();
+    if (value is Map) {
+      for (final key in ['message', 'error', 'detail']) {
+        final message = _extractAssistantText(value[key]);
+        if (message.trim().isNotEmpty) return message.trim();
+      }
+    }
+    return '';
+  }
+
+  String _friendlyError(Object error) {
+    if (error is _AssistantRequestException) {
+      final status = error.statusCode;
+      if (status == 401 || status == 403) {
+        return 'Trợ lý chưa được cấp quyền. Bạn thử lại sau nhé.';
+      }
+      if (status == 429) {
+        return 'Trợ lý đang bận. Bạn thử lại sau ít phút nhé.';
+      }
+      if (status != null && status >= 500) {
+        return 'Máy chủ trợ lý đang bận. Bạn thử lại sau nhé.';
+      }
+    }
+    if (error is TimeoutException) {
+      return 'Kết nối trợ lý hơi chậm. Bạn thử lại nhé.';
+    }
+    return 'Chưa kết nối được trợ lý. Bạn thử lại nhé.';
+  }
+
+  String _speechText(String value) => value
+      .replaceAll('•', ', ')
+      .replaceAll(RegExp(r'[\r\n]+'), '. ')
+      .replaceAll(RegExp(r'[$#*_`{}\[\]|<>]'), '')
+      .replaceAll(RegExp(r'\s+'), ' ')
+      .trim();
+
+  Future<void> _speakSafely(String value) async {
+    final text = _speechText(value);
+    if (text.isEmpty) return;
+    try {
+      await _tts.stop();
+      await _tts.speak(text);
+    } catch (_) {
+      // Voice playback must not turn a successful API/reminder action into an error.
+    }
+  }
+
   Future<void> _ask(String text) async {
     setState(() => _sending = true);
     try {
+      final draft = ReminderCommandParser.parseDraft(text);
+      ReminderCommand? command;
+      if (draft.isReminderIntent) {
+        if (draft.time == null) {
+          _pendingReminder = draft;
+          const answer = 'Bạn muốn nhắc lúc mấy giờ?';
+          if (mounted) setState(() => _answer = answer);
+          await _speakSafely(answer);
+          return;
+        }
+        _pendingReminder = null;
+        command = ReminderCommand(name: draft.name, time: draft.time!);
+      } else if (_pendingReminder != null) {
+        final time = ReminderCommandParser.extractTime(text);
+        if (time != null) {
+          final pending = _pendingReminder!;
+          _pendingReminder = null;
+          command = ReminderCommand(name: pending.name, time: time);
+        } else {
+          _pendingReminder = null;
+        }
+      }
+      if (command != null) {
+        try {
+          if (!SupabaseBootstrap.enabled ||
+              Supabase.instance.client.auth.currentUser == null) {
+            throw StateError('medicine_reminders_remote_unavailable');
+          }
+          final created = await _reminderService.create(
+            MedicineReminder(
+              id: newReminderId(),
+              name: command.name,
+              time: command.time,
+            ),
+          );
+          final notificationReady = await NotificationService.instance
+              .trySchedule(created);
+          final answer = notificationReady
+              ? 'Đã tạo nhắc thuốc “${created.name}” lúc ${created.time} mỗi ngày.'
+              : 'Đã lưu nhắc thuốc “${created.name}” lúc ${created.time}. Máy chưa bật được thông báo, bạn kiểm tra quyền thông báo trong Cài đặt nhé.';
+          if (mounted) setState(() => _answer = answer);
+          await _speakSafely(answer);
+        } catch (error, stackTrace) {
+          debugPrint('DiVie reminder create failed: $error');
+          debugPrintStack(stackTrace: stackTrace);
+          final answer = error.toString().contains(
+                'medicine_reminders_remote_unavailable',
+              )
+              ? 'Ứng dụng chưa kết nối tài khoản. Bạn đăng nhập lại rồi thử tạo lịch nhé.'
+              : 'Chưa lưu được lịch nhắc thuốc. Bạn thử lại nhé.';
+          if (mounted) setState(() => _answer = answer);
+          await _speakSafely(answer);
+        }
+        // Reminder commands are handled locally. Do not send the same voice
+        // command to Groq as a second request.
+        return;
+      }
+
       final headers = {'Content-Type': 'application/json'};
       if (SupabaseBootstrap.enabled) {
         final token = Supabase.instance.client.auth.currentSession?.accessToken;
         if (token != null) headers['Authorization'] = 'Bearer $token';
       }
-      final response = await http.post(
-        Uri.parse('${AppConfig.voiceBaseUrl}/api/ai/chat'),
-        headers: headers,
-        body: jsonEncode({
-          'messages': [
-            {'role': 'system', 'content': 'Bạn là trợ lý DiVie cho người cao tuổi. Trả lời tiếng Việt ngắn, rõ, an toàn. Nếu người dùng yêu cầu nhắc thuốc, hãy xác nhận tên thuốc và thời gian cần thiết.'},
-            {'role': 'user', 'content': text},
-          ],
-          'temperature': .3,
-          'maxCompletionTokens': 300,
-        }),
-      ).timeout(const Duration(seconds: 45));
-      final body = jsonDecode(response.body) as Map<String, dynamic>;
-      if (response.statusCode < 200 || response.statusCode >= 300) {
-        throw Exception(body['message'] ?? body['error'] ?? 'Không gọi được trợ lý lúc này.');
+      final history = _conversation.length > 6
+          ? _conversation.sublist(_conversation.length - 6)
+          : _conversation;
+      final messages = <Map<String, String>>[
+        {
+          'role': 'system',
+          'content':
+              'Bạn là trợ lý DiVie cho người cao tuổi. Trả lời tiếng Việt ngắn, rõ, an toàn. Không tự tạo lịch nhắc thuốc và không hỏi lại nhiều câu; lệnh nhắc thuốc đã được ứng dụng xử lý riêng. Nếu cần làm rõ một việc khác, chỉ hỏi một câu ngắn.',
+        },
+        ...history,
+        {'role': 'user', 'content': text},
+      ];
+      final response = await http
+          .post(
+            Uri.parse('${AppConfig.voiceBaseUrl}/api/ai/chat'),
+            headers: headers,
+            body: jsonEncode({
+              'messages': messages,
+              'temperature': .3,
+              'maxCompletionTokens': 300,
+            }),
+          )
+          .timeout(const Duration(seconds: 45));
+
+      dynamic body;
+      try {
+        body = jsonDecode(response.body);
+      } catch (_) {
+        body = response.body;
       }
-      final answer = (body['content'] ?? body['data']?['content'] ?? '').toString().trim();
-      if (answer.isEmpty) throw Exception('Trợ lý chưa trả về nội dung.');
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        throw _AssistantRequestException(
+          _extractErrorText(body),
+          statusCode: response.statusCode,
+        );
+      }
+      final answer = _cleanAssistantText(_extractAssistantText(body));
+      if (answer.isEmpty) {
+        throw const _AssistantRequestException('empty_response');
+      }
+      if (_looksLikeReminderConfirmation(answer)) {
+        const safeAnswer =
+            'Mình chưa ghi được lịch nhắc thuốc. Bạn nói lại: “Nhắc tôi uống thuốc lúc 16 giờ.”';
+        if (mounted) setState(() => _answer = safeAnswer);
+        await _speakSafely(safeAnswer);
+        return;
+      }
       if (!mounted) return;
       setState(() => _answer = answer);
-      await _tts.speak(answer);
+      _conversation
+        ..add({'role': 'user', 'content': text})
+        ..add({'role': 'assistant', 'content': answer});
+      if (_conversation.length > 8) {
+        _conversation.removeRange(0, _conversation.length - 8);
+      }
+      await _speakSafely(answer);
     } catch (error) {
-      if (mounted) setState(() => _answer = 'Chưa kết nối được trợ lý: $error');
+      final answer = _friendlyError(error);
+      if (mounted) {
+        setState(() => _answer = answer);
+        await _speakSafely(answer);
+      }
     } finally {
       if (mounted) setState(() => _sending = false);
     }
+  }
+
+  bool _looksLikeReminderConfirmation(String value) {
+    final text = value.toLowerCase();
+    final claimsSaved = text.contains('đã tạo') ||
+        text.contains('đã đặt') ||
+        text.contains('đã lưu') ||
+        text.contains('tạo thành công') ||
+        text.contains('đặt thành công');
+    final reminderTopic = text.contains('nhắc') ||
+        text.contains('thuốc') ||
+        text.contains('uống thuốc') ||
+        text.contains('báo thức');
+    return claimsSaved && reminderTopic;
   }
 
   @override
@@ -116,31 +380,70 @@ class _VoiceAssistantPageState extends State<VoiceAssistantPage> {
 
   @override
   Widget build(BuildContext context) {
+    final bottomInset = MediaQuery.viewInsetsOf(context).bottom;
     return Scaffold(
       appBar: AppBar(title: const Text('Trợ lý DiVie')),
-      body: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            const Text('Nói điều bạn cần', style: TextStyle(fontSize: 26, fontWeight: FontWeight.w900, color: DivieColors.navy)),
-            const SizedBox(height: 8),
-            const Text('Ví dụ: “Nhắc tôi uống thuốc lúc 4 giờ chiều”.', style: TextStyle(color: DivieColors.muted, fontSize: 16)),
-            const SizedBox(height: 28),
-            _VoiceBubble(label: 'Bạn nói', text: _transcript.isEmpty ? 'Bấm micro để bắt đầu' : _transcript),
-            const SizedBox(height: 14),
-            _VoiceBubble(label: 'DiVie trả lời', text: _sending ? 'Đang suy nghĩ…' : (_answer.isEmpty ? 'Chưa có câu trả lời' : _answer)),
-            const Spacer(),
-            Center(
-              child: FloatingActionButton.large(
-                backgroundColor: _listening ? DivieColors.danger : DivieColors.teal,
-                onPressed: _toggleListening,
-                child: Icon(_listening ? Icons.stop_rounded : Icons.mic_rounded, color: Colors.white, size: 36),
+      body: SafeArea(
+        child: SingleChildScrollView(
+          padding: EdgeInsets.fromLTRB(24, 24, 24, 24 + bottomInset),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const Text(
+                'Nói điều bạn cần',
+                style: TextStyle(
+                  fontSize: 26,
+                  fontWeight: FontWeight.w900,
+                  color: DivieColors.navy,
+                ),
               ),
-            ),
-            const SizedBox(height: 12),
-            Center(child: Text(!_ready ? 'Đang xin quyền micro…' : (_listening ? 'Đang nghe…' : 'Chạm để nói'), style: const TextStyle(color: DivieColors.muted, fontWeight: FontWeight.w700))),
-          ],
+              const SizedBox(height: 8),
+              const Text(
+                'Ví dụ: “Nhắc tôi uống thuốc lúc 4 giờ chiều”.',
+                style: TextStyle(color: DivieColors.muted, fontSize: 16),
+              ),
+              const SizedBox(height: 28),
+              _VoiceBubble(
+                label: 'Bạn nói',
+                text: _transcript.isEmpty
+                    ? 'Bấm micro để bắt đầu'
+                    : _transcript,
+              ),
+              const SizedBox(height: 14),
+              _VoiceBubble(
+                label: 'DiVie trả lời',
+                text: _sending
+                    ? 'Đang suy nghĩ…'
+                    : (_answer.isEmpty ? 'Chưa có câu trả lời' : _answer),
+              ),
+              const SizedBox(height: 32),
+              Center(
+                child: FloatingActionButton.large(
+                  backgroundColor: _listening
+                      ? DivieColors.danger
+                      : DivieColors.teal,
+                  onPressed: _toggleListening,
+                  child: Icon(
+                    _listening ? Icons.stop_rounded : Icons.mic_rounded,
+                    color: Colors.white,
+                    size: 36,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              Center(
+                child: Text(
+                  !_ready
+                      ? 'Đang xin quyền micro…'
+                      : (_listening ? 'Đang nghe…' : 'Chạm để nói'),
+                  style: const TextStyle(
+                    color: DivieColors.muted,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -154,11 +457,30 @@ class _VoiceBubble extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Container(
     padding: const EdgeInsets.all(18),
-    decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(22)),
-    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Text(label, style: const TextStyle(color: DivieColors.teal, fontWeight: FontWeight.w900)),
-      const SizedBox(height: 8),
-      Text(text, style: const TextStyle(color: DivieColors.navy, fontSize: 17, height: 1.35)),
-    ]),
+    decoration: BoxDecoration(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(22),
+    ),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: const TextStyle(
+            color: DivieColors.teal,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          text,
+          style: const TextStyle(
+            color: DivieColors.navy,
+            fontSize: 17,
+            height: 1.35,
+          ),
+        ),
+      ],
+    ),
   );
 }

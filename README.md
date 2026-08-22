@@ -1,23 +1,35 @@
-# divie
+﻿# DiVie workspace
 
-Landing page for DiVie, a remote elderly-care product concept using voice, AI, realtime chat, and health alerts.
+Monorepo workspace for DiVie.
 
-## Tech stack
+## Structure
 
-- Vite
-- React
-- TypeScript
-- Phosphor Icons
+- `web/` — DiVie landing page (Vite + React + TypeScript)
+- `app/` — DiVie mobile application (Flutter)
+- `docs/` — product and technical documentation
 
-## Local development
+## Web
 
-```bash
+```powershell
+cd web
 npm install
 npm run dev
 ```
 
-## Build
+## App
 
-```bash
+```powershell
+cd app
+flutter pub get
+flutter run
+```
+
+## Checks
+
+```powershell
+cd web
 npm run build
+
+cd ..\app
+flutter analyze
 ```

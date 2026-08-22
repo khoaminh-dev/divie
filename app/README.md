@@ -39,8 +39,8 @@ Luồng đã kết nối:
 - Tin nhắn đọc/ghi qua `chat_rooms`, `chat_participants`, `chat_messages`.
 - Tạo cuộc trò chuyện trực tiếp qua RPC `create_or_get_direct_chat`.
 
-Migration quyền chat nằm tại `../backend-source/admin-api/db/migrations/002_chat_rls.sql` và đã được áp dụng cho project Supabase production đang liên kết với app.
+Migration quyền chat nằm tại `../backend-source/admin-api/db/migrations/002_chat_rls.sql`; các migration `003_enable_chat_participants_realtime.sql` và `004_allow_authenticated_profile_discovery_for_chat.sql` bổ sung realtime cho thành viên phòng và cho phép người dùng đã đăng nhập tìm nhau để bắt đầu chat. Cả ba migration đã được áp dụng cho project Supabase production đang liên kết với app.
 
-Danh sách và hội thoại tự làm mới định kỳ; tin nhắn mới được tải lại trong vòng vài giây. Realtime hiện đã bật cho `profiles`, `chat_rooms` và `chat_messages`; polling vẫn được giữ làm phương án dự phòng khi thiết bị mất kết nối tạm thời.
+Danh sách và hội thoại tự làm mới định kỳ; tin nhắn mới được tải lại trong vòng vài giây. Realtime hiện đã bật cho `profiles`, `chat_rooms`, `chat_participants` và `chat_messages`; polling vẫn được giữ làm phương án dự phòng khi thiết bị mất kết nối tạm thời.
 
 Nếu tài khoản chưa có quyền RLS ở các bảng trên, ứng dụng sẽ hiện trạng thái lỗi và nút thử lại; không dùng dữ liệu giả khi đã bật production config.

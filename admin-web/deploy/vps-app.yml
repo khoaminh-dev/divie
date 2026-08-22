@@ -1,0 +1,19 @@
+services:
+  divie-admin:
+    image: ghcr.io/divie-product/divie-admin:latest
+    container_name: divie-admin
+    restart: unless-stopped
+    networks:
+      - proxy
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.divie-admin.rule=Host(`admin.divie.site`)
+      - traefik.http.routers.divie-admin.entrypoints=websecure
+      - traefik.http.routers.divie-admin.tls=true
+      - traefik.http.routers.divie-admin.tls.certresolver=letsencrypt
+      - traefik.http.services.divie-admin.loadbalancer.server.port=80
+      - traefik.docker.network=proxy
+      - com.centurylinklabs.watchtower.enable=true
+networks:
+  proxy:
+    external: true

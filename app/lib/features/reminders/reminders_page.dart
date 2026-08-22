@@ -36,6 +36,7 @@ class _RemindersPageState extends State<RemindersPage> {
     super.initState();
     _service = ReminderDataService(
       client: SupabaseBootstrap.enabled ? Supabase.instance.client : null,
+      allowLocalFallback: false,
     );
     _load();
     _subscribeRealtime();
@@ -83,7 +84,7 @@ class _RemindersPageState extends State<RemindersPage> {
       final statuses = await _service.loadStatuses(DateTime.now());
       if (!_isFamily) {
         for (final item in items) {
-          await NotificationService.instance.schedule(item);
+          await NotificationService.instance.trySchedule(item);
         }
       }
       if (!mounted) return;
@@ -111,12 +112,16 @@ class _RemindersPageState extends State<RemindersPage> {
     if (result == null) return;
     try {
       final created = await _service.create(result);
-      if (!_isFamily) {
-        await NotificationService.instance.schedule(created);
-      }
+      final notificationReady = _isFamily
+          ? true
+          : await NotificationService.instance.trySchedule(created);
       if (!mounted) return;
       setState(() => _items = [..._items, created]..sort(_sortByTime));
-    } catch (_) {
+      if (!notificationReady) {
+        _showError('Đã lưu lịch, nhưng máy chưa bật được thông báo.');
+      }
+    } catch (error) {
+      debugPrint('DiVie reminder create failed: $error');
       _showError('Không tạo được lịch nhắc thuốc.');
     }
   }
@@ -131,9 +136,9 @@ class _RemindersPageState extends State<RemindersPage> {
     if (result == null) return;
     try {
       await _service.update(result);
-      if (!_isFamily) {
-        await NotificationService.instance.schedule(result);
-      }
+      final notificationReady = _isFamily
+          ? true
+          : await NotificationService.instance.trySchedule(result);
       if (!mounted) return;
       setState(() {
         _items =
@@ -142,7 +147,11 @@ class _RemindersPageState extends State<RemindersPage> {
                 .toList()
               ..sort(_sortByTime);
       });
-    } catch (_) {
+      if (!notificationReady) {
+        _showError('Đã cập nhật lịch, nhưng máy chưa bật được thông báo.');
+      }
+    } catch (error) {
+      debugPrint('DiVie reminder update failed: $error');
       _showError('Không cập nhật được lịch nhắc thuốc.');
     }
   }
@@ -157,9 +166,14 @@ class _RemindersPageState extends State<RemindersPage> {
     try {
       await _service.update(updated);
       if (!_isFamily) {
-        await NotificationService.instance.schedule(updated);
+        final notificationReady = await NotificationService.instance
+            .trySchedule(updated);
+        if (!notificationReady) {
+          _showError('Đã cập nhật lịch, nhưng máy chưa bật được thông báo.');
+        }
       }
-    } catch (_) {
+    } catch (error) {
+      debugPrint('DiVie reminder toggle failed: $error');
       _showError('Không cập nhật được trạng thái lịch nhắc.');
     }
   }
@@ -535,9 +549,7 @@ class _ReminderFormState extends State<_ReminderForm> {
             Navigator.pop(
               context,
               MedicineReminder(
-                id:
-                    widget.initial?.id ??
-                    DateTime.now().millisecondsSinceEpoch.remainder(2147483647),
+                id: widget.initial?.id ?? newReminderId(),
                 name: name,
                 time:
                     '${_time.hour.toString().padLeft(2, '0')}:${_time.minute.toString().padLeft(2, '0')}',

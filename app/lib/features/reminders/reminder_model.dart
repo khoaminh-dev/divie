@@ -1,3 +1,5 @@
+int newReminderId() => DateTime.now().millisecondsSinceEpoch.remainder(2147483647);
+
 class MedicineReminder {
   const MedicineReminder({
     required this.id,
@@ -39,7 +41,7 @@ class MedicineReminder {
   factory MedicineReminder.fromJson(
     Map<String, dynamic> json,
   ) => MedicineReminder(
-    id: (json['id'] as num?)?.toInt() ?? DateTime.now().millisecondsSinceEpoch,
+    id: (json['id'] as num?)?.toInt() ?? newReminderId(),
     name: json['name'] as String? ?? '',
     time: json['time'] as String? ?? '08:00',
     note: json['note'] as String? ?? '',

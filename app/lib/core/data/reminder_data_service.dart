@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -5,15 +6,24 @@ import '../../features/reminders/reminder_model.dart';
 import '../../features/reminders/reminder_store.dart';
 
 class ReminderDataService {
-  ReminderDataService({this.client});
+  ReminderDataService({this.client, this.allowLocalFallback = true});
 
   final SupabaseClient? client;
+  final bool allowLocalFallback;
   final ReminderStore _local = ReminderStore();
+  bool _localMigrationAttempted = false;
 
   bool get isRemote => client != null && client!.auth.currentUser != null;
 
   Future<List<MedicineReminder>> load() async {
-    if (!isRemote) return _local.load();
+    if (!isRemote) {
+      if (!allowLocalFallback) {
+        throw StateError('medicine_reminders_remote_unavailable');
+      }
+      return _local.load();
+    }
+
+    await _migrateLocalReminders();
     final rows = await client!
         .from('medicine_reminders')
         .select('id,name,time,note,enabled')
@@ -27,6 +37,9 @@ class ReminderDataService {
 
   Future<MedicineReminder> create(MedicineReminder item) async {
     if (!isRemote) {
+      if (!allowLocalFallback) {
+        throw StateError('medicine_reminders_remote_unavailable');
+      }
       final current = await _local.load();
       await _local.save([...current, item]);
       return item;
@@ -47,6 +60,9 @@ class ReminderDataService {
 
   Future<void> update(MedicineReminder item) async {
     if (!isRemote) {
+      if (!allowLocalFallback) {
+        throw StateError('medicine_reminders_remote_unavailable');
+      }
       final current = await _local.load();
       await _local.save(
         current.map((value) => value.id == item.id ? item : value).toList(),
@@ -67,6 +83,9 @@ class ReminderDataService {
 
   Future<void> delete(MedicineReminder item) async {
     if (!isRemote) {
+      if (!allowLocalFallback) {
+        throw StateError('medicine_reminders_remote_unavailable');
+      }
       final current = await _local.load();
       await _local.save(current.where((value) => value.id != item.id).toList());
       return;
@@ -81,6 +100,9 @@ class ReminderDataService {
   Future<Map<int, String>> loadStatuses(DateTime day) async {
     final date = _dateValue(day);
     if (!isRemote) {
+      if (!allowLocalFallback) {
+        throw StateError('medicine_reminders_remote_unavailable');
+      }
       final prefs = await SharedPreferences.getInstance();
       final result = <int, String>{};
       for (final item in await _local.load()) {
@@ -107,6 +129,9 @@ class ReminderDataService {
   }) async {
     final date = _dateValue(day);
     if (!isRemote) {
+      if (!allowLocalFallback) {
+        throw StateError('medicine_reminders_remote_unavailable');
+      }
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString(_statusKey(reminder.id, date), status);
       return;
@@ -127,4 +152,53 @@ class ReminderDataService {
 
   static String _statusKey(int reminderId, String date) =>
       'divie.reminder_status.$date.$reminderId';
+
+  Future<void> _migrateLocalReminders() async {
+    if (_localMigrationAttempted || !isRemote) return;
+    _localMigrationAttempted = true;
+
+    final localItems = await _local.load();
+    if (localItems.isEmpty) return;
+
+    try {
+      final remoteRows = await client!
+          .from('medicine_reminders')
+          .select('name,time,note,enabled')
+          .eq('account_id', client!.auth.currentUser!.id);
+      final existingKeys = (remoteRows as List)
+          .whereType<Map<String, dynamic>>()
+          .map(_reminderKey)
+          .toSet();
+      final pending = localItems
+          .where((item) => !existingKeys.contains(_reminderKey(item)))
+          .map(
+            (item) => {
+              'account_id': client!.auth.currentUser!.id,
+              'name': item.name,
+              'time': item.time,
+              'note': item.note,
+              'enabled': item.enabled,
+            },
+          )
+          .toList();
+
+      if (pending.isNotEmpty) {
+        await client!.from('medicine_reminders').insert(pending);
+      }
+      await _local.save([]);
+    } catch (error) {
+      // Keep local data if the one-time migration cannot reach Supabase.
+      // The next successful load will retry it.
+      _localMigrationAttempted = false;
+      debugPrint('DiVie reminder local migration skipped: $error');
+    }
+  }
+
+  static String _reminderKey(Object value) {
+    if (value is MedicineReminder) {
+      return '${value.name.trim().toLowerCase()}|${value.time}|${value.note.trim().toLowerCase()}|${value.enabled}';
+    }
+    final row = value as Map<String, dynamic>;
+    return '${(row['name'] as String? ?? '').trim().toLowerCase()}|${row['time'] as String? ?? ''}|${(row['note'] as String? ?? '').trim().toLowerCase()}|${row['enabled'] as bool? ?? true}';
+  }
 }

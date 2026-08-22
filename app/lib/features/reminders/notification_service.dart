@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:timezone/data/latest.dart' as tz;
 import 'package:timezone/timezone.dart' as tz;
@@ -50,7 +51,7 @@ class NotificationService {
     );
     if (!next.isAfter(now)) next = next.add(const Duration(days: 1));
     await _plugin.zonedSchedule(
-      reminder.id,
+      _notificationId(reminder.id),
       'Đến giờ uống thuốc',
       reminder.note.isEmpty
           ? reminder.name
@@ -72,7 +73,28 @@ class NotificationService {
     );
   }
 
-  Future<void> cancel(int id) => _plugin.cancel(id);
+  /// A notification permission/device problem must not make a saved reminder
+  /// look like it failed to create.
+  Future<bool> trySchedule(MedicineReminder reminder) async {
+    try {
+      await schedule(reminder);
+      return true;
+    } catch (error, stackTrace) {
+      debugPrint('DiVie notification schedule failed: $error');
+      debugPrintStack(stackTrace: stackTrace);
+      return false;
+    }
+  }
+
+  Future<void> cancel(int id) => _plugin.cancel(_notificationId(id));
 
   Future<void> cancelAll() => _plugin.cancelAll();
+
+  // Android notification IDs are 32-bit integers. Remote rows normally use a
+  // small sequence, while offline/voice-created reminders use millisecond
+  // timestamps, so normalize both sources to one safe ID space.
+  int _notificationId(int id) {
+    final normalized = id.abs().remainder(2147483647);
+    return normalized == 0 ? 1 : normalized;
+  }
 }

@@ -8,6 +8,4 @@ class EmergencyService {
       throw Exception('Không thể mở ứng dụng gọi điện.');
     }
   }
-
-  static Future<void> callAmbulance() => callNumber('115');
 }

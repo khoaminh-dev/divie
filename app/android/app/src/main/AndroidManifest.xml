@@ -10,6 +10,11 @@
         android:name="${applicationName}"
         android:icon="@drawable/divie_logo"
         android:roundIcon="@drawable/divie_logo">
+        <!-- Keeps the dynamically referenced small notification icon in the
+             release APK. flutter_local_notifications resolves this by name. -->
+        <meta-data
+            android:name="com.englishhouse.divie_app.NOTIFICATION_ICON"
+            android:resource="@drawable/ic_notification" />
         <activity
             android:name=".MainActivity"
             android:exported="true"

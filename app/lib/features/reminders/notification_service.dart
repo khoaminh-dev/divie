@@ -14,7 +14,10 @@ class NotificationService {
   Future<void> initialize() async {
     tz.initializeTimeZones();
     tz.setLocalLocation(tz.getLocation('Asia/Ho_Chi_Minh'));
-    const android = AndroidInitializationSettings('@mipmap/ic_launcher');
+    // Android notifications need a dedicated drawable icon. The adaptive
+    // launcher icon is not a valid small-notification icon on newer Android
+    // versions, which prevented notification initialization on real devices.
+    const android = AndroidInitializationSettings('ic_notification');
     const darwin = DarwinInitializationSettings();
     await _plugin.initialize(
       const InitializationSettings(android: android, iOS: darwin),

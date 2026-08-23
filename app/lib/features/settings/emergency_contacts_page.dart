@@ -108,7 +108,7 @@ class _EmergencyContactsPageState extends State<EmergencyContactsPage> {
                       decoration: InputDecoration(
                         labelText: 'Số liên hệ ${index + 1}',
                         hintText: index == 0
-                            ? 'Mặc định 115 nếu để trống'
+                            ? 'Nên thêm số người thân đầu tiên'
                             : 'Không bắt buộc',
                         prefixIcon: const Icon(Icons.phone_rounded),
                         filled: true,

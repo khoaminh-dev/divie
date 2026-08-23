@@ -670,7 +670,38 @@ class _FeatureGrid extends StatelessWidget {
       final contacts = await EmergencyContactsDataService(
         client: SupabaseBootstrap.enabled ? Supabase.instance.client : null,
       ).load();
-      final first = contacts.isEmpty ? '115' : contacts.first;
+      if (contacts.isEmpty) {
+        if (!context.mounted) return;
+        final openSettings = await showDialog<bool>(
+          context: context,
+          builder: (dialogContext) => AlertDialog(
+            title: const Text('Chưa có số liên hệ khẩn cấp'),
+            content: const Text(
+              'Hãy thêm ít nhất một số người thân để DiVie có thể mở cuộc gọi khi cần.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext, false),
+                child: const Text('Để sau'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(dialogContext, true),
+                child: const Text('Cài liên hệ'),
+              ),
+            ],
+          ),
+        );
+        if (openSettings == true && context.mounted) {
+          await Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => const EmergencyContactsPage(),
+            ),
+          );
+        }
+        return;
+      }
+      final first = contacts.first;
       await EmergencyService.callNumber(first);
       if (!context.mounted || contacts.length < 2) return;
       await showModalBottomSheet<void>(

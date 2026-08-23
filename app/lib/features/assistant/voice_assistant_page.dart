@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_tts/flutter_tts.dart';
@@ -386,20 +387,17 @@ class _VoiceAssistantPageState extends State<VoiceAssistantPage> {
 
   @override
   Widget build(BuildContext context) {
+    if (widget.embedded) return _buildFloatingAssistant(context);
+
     final bottomInset = MediaQuery.viewInsetsOf(context).bottom;
     final content = SingleChildScrollView(
-      padding: EdgeInsets.fromLTRB(
-        24,
-        widget.embedded ? 8 : 24,
-        24,
-        24 + bottomInset,
-      ),
+      padding: EdgeInsets.fromLTRB(24, 24, 24, 24 + bottomInset),
       child: Column(
-        mainAxisSize: widget.embedded ? MainAxisSize.min : MainAxisSize.max,
+        mainAxisSize: MainAxisSize.max,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Text(
-            widget.embedded ? 'Bạn cần DiVie giúp gì?' : 'Nói điều bạn cần',
+            'Nói điều bạn cần',
             style: const TextStyle(
               fontSize: 26,
               fontWeight: FontWeight.w900,
@@ -453,28 +451,261 @@ class _VoiceAssistantPageState extends State<VoiceAssistantPage> {
               ),
             ),
           ),
-          if (widget.embedded) ...[
-            const SizedBox(height: 12),
-            TextButton.icon(
-              onPressed: () {
-                Navigator.of(context).pop();
-                Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const VoiceAssistantPage()),
-                );
-              },
-              icon: const Icon(Icons.history_rounded),
-              label: const Text('Mở trợ lý đầy đủ'),
-            ),
-          ],
         ],
       ),
     );
 
-    if (widget.embedded) return content;
-
     return Scaffold(
       appBar: AppBar(title: const Text('Trợ lý DiVie')),
       body: SafeArea(child: content),
+    );
+  }
+
+  Widget _buildFloatingAssistant(BuildContext context) {
+    final status = !_ready
+        ? 'Đang chuẩn bị micro…'
+        : _sending
+        ? 'DiVie đang xử lý yêu cầu của bạn'
+        : _listening
+        ? 'DiVie đang lắng nghe…'
+        : 'Chạm vào micro và nói điều bạn cần';
+    final hasResult = _transcript.isNotEmpty || _answer.isNotEmpty;
+
+    return SingleChildScrollView(
+      padding: EdgeInsets.fromLTRB(
+        22,
+        18,
+        22,
+        22 + MediaQuery.viewInsetsOf(context).bottom,
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 42,
+                height: 42,
+                decoration: const BoxDecoration(
+                  color: Color(0x1A18AAB3),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.auto_awesome_rounded,
+                  color: DivieColors.teal,
+                ),
+              ),
+              const SizedBox(width: 12),
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Trợ lý DiVie',
+                      style: TextStyle(
+                        color: DivieColors.navy,
+                        fontSize: 20,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    SizedBox(height: 2),
+                    Text(
+                      'Nói tự nhiên, DiVie sẽ hỗ trợ ngay',
+                      style: TextStyle(color: DivieColors.muted, fontSize: 13),
+                    ),
+                  ],
+                ),
+              ),
+              IconButton(
+                tooltip: 'Đóng trợ lý',
+                onPressed: () => Navigator.of(context).pop(),
+                icon: const Icon(Icons.close_rounded, color: DivieColors.navy),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          _VoiceWave(listening: _listening, processing: _sending),
+          const SizedBox(height: 10),
+          Text(
+            status,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              color: DivieColors.navy,
+              fontSize: 16,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 4),
+          const Text(
+            'Ví dụ: “Nhắc tôi uống thuốc lúc 4 giờ chiều”.',
+            textAlign: TextAlign.center,
+            style: TextStyle(color: DivieColors.muted, fontSize: 14),
+          ),
+          const SizedBox(height: 16),
+          Center(
+            child: FloatingActionButton.large(
+              heroTag: 'assistant-floating-mic',
+              backgroundColor: _listening
+                  ? DivieColors.danger
+                  : DivieColors.teal,
+              onPressed: _sending ? null : _toggleListening,
+              child: Icon(
+                _listening ? Icons.stop_rounded : Icons.mic_rounded,
+                color: Colors.white,
+                size: 38,
+              ),
+            ),
+          ),
+          if (hasResult) ...[
+            const SizedBox(height: 18),
+            if (_transcript.isNotEmpty)
+              _AssistantResultCard(
+                icon: Icons.record_voice_over_rounded,
+                label: 'Bạn vừa nói',
+                text: _transcript,
+              ),
+            if (_transcript.isNotEmpty && _answer.isNotEmpty)
+              const SizedBox(height: 10),
+            if (_answer.isNotEmpty)
+              _AssistantResultCard(
+                icon: Icons.auto_awesome_rounded,
+                label: 'DiVie đã xử lý',
+                text: _answer,
+                emphasized: true,
+              ),
+          ],
+          const SizedBox(height: 8),
+          TextButton.icon(
+            onPressed: () {
+              Navigator.of(context).pop();
+              Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const VoiceAssistantPage()),
+              );
+            },
+            icon: const Icon(Icons.history_rounded),
+            label: const Text('Mở trợ lý đầy đủ'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _AssistantResultCard extends StatelessWidget {
+  const _AssistantResultCard({
+    required this.icon,
+    required this.label,
+    required this.text,
+    this.emphasized = false,
+  });
+
+  final IconData icon;
+  final String label;
+  final String text;
+  final bool emphasized;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    width: double.infinity,
+    padding: const EdgeInsets.all(14),
+    decoration: BoxDecoration(
+      color: emphasized ? const Color(0xFFE2F8F7) : Colors.white,
+      borderRadius: BorderRadius.circular(18),
+      border: Border.all(
+        color: emphasized ? const Color(0x6618AAB3) : const Color(0xFFE4ECF1),
+      ),
+    ),
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(icon, color: DivieColors.teal, size: 20),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                label,
+                style: const TextStyle(
+                  color: DivieColors.teal,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                text,
+                style: const TextStyle(
+                  color: DivieColors.navy,
+                  fontSize: 15,
+                  height: 1.3,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
+class _VoiceWave extends StatefulWidget {
+  const _VoiceWave({required this.listening, required this.processing});
+
+  final bool listening;
+  final bool processing;
+
+  @override
+  State<_VoiceWave> createState() => _VoiceWaveState();
+}
+
+class _VoiceWaveState extends State<_VoiceWave>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1050),
+    )..repeat();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final active = widget.listening || widget.processing;
+    final color = widget.listening ? DivieColors.teal : DivieColors.navy;
+    return SizedBox(
+      height: 72,
+      child: AnimatedBuilder(
+        animation: _controller,
+        builder: (context, _) => Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: List.generate(11, (index) {
+            final phase = _controller.value * math.pi * 2 + index * .72;
+            final amount = active ? (math.sin(phase).abs() * .72 + .28) : .24;
+            return AnimatedContainer(
+              duration: const Duration(milliseconds: 120),
+              margin: const EdgeInsets.symmetric(horizontal: 3),
+              width: 5,
+              height: 14 + amount * 48,
+              decoration: BoxDecoration(
+                color: color.withValues(alpha: active ? .9 : .32),
+                borderRadius: BorderRadius.circular(99),
+              ),
+            );
+          }),
+        ),
+      ),
     );
   }
 }

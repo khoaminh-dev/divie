@@ -251,21 +251,55 @@ class _DivieShellState extends State<DivieShell> {
 
   void _select(int index) {
     if (index == 2) {
-      showModalBottomSheet<void>(
+      showGeneralDialog<void>(
         context: context,
-        isScrollControlled: true,
-        useSafeArea: true,
-        backgroundColor: Colors.transparent,
-        builder: (context) => Container(
-          constraints: BoxConstraints(
-            maxHeight: MediaQuery.sizeOf(context).height * .82,
+        barrierDismissible: true,
+        barrierLabel: 'Đóng trợ lý',
+        barrierColor: const Color(0x330B233F),
+        transitionDuration: const Duration(milliseconds: 220),
+        pageBuilder: (dialogContext, _, _) => SafeArea(
+          child: Align(
+            alignment: Alignment.bottomCenter,
+            child: Material(
+              color: Colors.transparent,
+              child: Container(
+                margin: const EdgeInsets.fromLTRB(18, 0, 18, 24),
+                constraints: BoxConstraints(
+                  maxHeight: MediaQuery.sizeOf(dialogContext).height * .72,
+                ),
+                decoration: BoxDecoration(
+                  color: DivieColors.background,
+                  borderRadius: BorderRadius.circular(32),
+                  boxShadow: const [
+                    BoxShadow(
+                      color: Color(0x330B233F),
+                      blurRadius: 28,
+                      offset: Offset(0, 12),
+                    ),
+                  ],
+                ),
+                child: const VoiceAssistantPage(embedded: true),
+              ),
+            ),
           ),
-          decoration: const BoxDecoration(
-            color: DivieColors.background,
-            borderRadius: BorderRadius.vertical(top: Radius.circular(32)),
-          ),
-          child: const VoiceAssistantPage(embedded: true),
         ),
+        transitionBuilder: (context, animation, secondaryAnimation, child) =>
+            FadeTransition(
+              opacity: animation,
+              child: SlideTransition(
+                position:
+                    Tween<Offset>(
+                      begin: const Offset(0, .16),
+                      end: Offset.zero,
+                    ).animate(
+                      CurvedAnimation(
+                        parent: animation,
+                        curve: Curves.easeOutCubic,
+                      ),
+                    ),
+                child: child,
+              ),
+            ),
       );
       return;
     }

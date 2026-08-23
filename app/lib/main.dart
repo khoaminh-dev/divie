@@ -8,6 +8,7 @@ import 'core/config/app_config.dart';
 import 'features/auth/login_page.dart';
 import 'features/chat/live_chat_pages.dart';
 import 'features/health/health_capture_page.dart';
+import 'features/health/health_insights_page.dart';
 import 'features/reminders/notification_service.dart';
 import 'features/reminders/reminders_page.dart';
 import 'core/data/reminder_data_service.dart';
@@ -358,6 +359,8 @@ class _HomePage extends StatelessWidget {
               _HomeTopBar(role: role, onNavigate: onNavigate),
               SizedBox(height: _clamp(constraints.maxWidth * .07, 26, 42)),
               _HealthHubCard(role: role, onNavigate: onNavigate),
+              const SizedBox(height: 12),
+              _HealthChartButton(),
               SizedBox(height: _clamp(constraints.maxWidth * .085, 28, 48)),
               _FeatureGrid(role: role, onNavigate: onNavigate),
               const SizedBox(height: 36),
@@ -367,6 +370,26 @@ class _HomePage extends StatelessWidget {
       },
     );
   }
+}
+
+class _HealthChartButton extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) => OutlinedButton.icon(
+    style: OutlinedButton.styleFrom(
+      minimumSize: const Size.fromHeight(54),
+      foregroundColor: DivieColors.teal,
+      side: const BorderSide(color: Color(0x6618AAB3)),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+    ),
+    onPressed: () => Navigator.of(
+      context,
+    ).push(MaterialPageRoute(builder: (_) => const HealthInsightsPage())),
+    icon: const Icon(Icons.monitor_heart_outlined),
+    label: const Text(
+      'Biểu đồ sức khỏe',
+      style: TextStyle(fontWeight: FontWeight.w900, fontSize: 16),
+    ),
+  );
 }
 
 double _clamp(double value, double min, double max) =>

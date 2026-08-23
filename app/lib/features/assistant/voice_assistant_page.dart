@@ -15,6 +15,8 @@ import '../../main.dart';
 import '../reminders/notification_service.dart';
 import '../reminders/reminder_command_parser.dart';
 import '../reminders/reminder_model.dart';
+import '../health/health_capture_page.dart';
+import '../health/health_insights_page.dart';
 
 class _AssistantRequestException implements Exception {
   const _AssistantRequestException(this.message, {this.statusCode});
@@ -25,6 +27,8 @@ class _AssistantRequestException implements Exception {
   @override
   String toString() => message;
 }
+
+enum _HealthVoiceAction { capture, insights }
 
 class VoiceAssistantPage extends StatefulWidget {
   const VoiceAssistantPage({super.key, this.embedded = false});
@@ -233,6 +237,11 @@ class _VoiceAssistantPageState extends State<VoiceAssistantPage> {
   Future<void> _ask(String text) async {
     setState(() => _sending = true);
     try {
+      final healthAction = _healthActionFor(text);
+      if (healthAction != null) {
+        await _openHealthAction(healthAction);
+        return;
+      }
       final draft = ReminderCommandParser.parseDraft(text);
       ReminderCommand? command;
       if (draft.isReminderIntent) {
@@ -302,7 +311,7 @@ class _VoiceAssistantPageState extends State<VoiceAssistantPage> {
         {
           'role': 'system',
           'content':
-              'Bạn là trợ lý DiVie cho người cao tuổi. Trả lời tiếng Việt ngắn, rõ, an toàn. Không tự tạo lịch nhắc thuốc và không hỏi lại nhiều câu; lệnh nhắc thuốc đã được ứng dụng xử lý riêng. Nếu cần làm rõ một việc khác, chỉ hỏi một câu ngắn.',
+              'Bạn là trợ lý DiVie cho người cao tuổi. Trả lời tiếng Việt ngắn, rõ, an toàn. Không tự tạo lịch nhắc thuốc, không tự nhận đã mở camera hoặc biểu đồ sức khỏe; các lệnh đó được ứng dụng xử lý riêng. Nếu cần làm rõ một việc khác, chỉ hỏi một câu ngắn.',
         },
         ...history,
         {'role': 'user', 'content': text},
@@ -360,6 +369,53 @@ class _VoiceAssistantPageState extends State<VoiceAssistantPage> {
     } finally {
       if (mounted) setState(() => _sending = false);
     }
+  }
+
+  _HealthVoiceAction? _healthActionFor(String value) {
+    final text = value
+        .toLowerCase()
+        .replaceAll(RegExp(r'[àáạảãâầấậẩẫăằắặẳẵ]'), 'a')
+        .replaceAll(RegExp(r'[èéẹẻẽêềếệểễ]'), 'e')
+        .replaceAll(RegExp(r'[ìíịỉĩ]'), 'i')
+        .replaceAll(RegExp(r'[òóọỏõôồốộổỗơờớợởỡ]'), 'o')
+        .replaceAll(RegExp(r'[ùúụủũưừứựửữ]'), 'u')
+        .replaceAll(RegExp(r'[ỳýỵỷỹ]'), 'y')
+        .replaceAll('đ', 'd');
+    final mentionsHealth =
+        text.contains('huyet ap') ||
+        text.contains('suc khoe') ||
+        text.contains('chi so') ||
+        text.contains('may do');
+    if (text.contains('bieu do') ||
+        text.contains('xu huong') ||
+        text.contains('lich su suc khoe')) {
+      return _HealthVoiceAction.insights;
+    }
+    if (mentionsHealth &&
+        (text.contains('chup') ||
+            text.contains('doc') ||
+            text.contains('do huyet ap'))) {
+      return _HealthVoiceAction.capture;
+    }
+    return null;
+  }
+
+  Future<void> _openHealthAction(_HealthVoiceAction action) async {
+    final navigator = Navigator.of(context, rootNavigator: true);
+    final answer = action == _HealthVoiceAction.capture
+        ? 'Mình mở camera để chụp máy đo huyết áp nhé.'
+        : 'Mình mở biểu đồ sức khỏe cho bạn nhé.';
+    if (mounted) setState(() => _answer = answer);
+    await _speakSafely(answer);
+    if (widget.embedded) await navigator.maybePop();
+    await Future<void>.delayed(const Duration(milliseconds: 180));
+    await navigator.push(
+      MaterialPageRoute(
+        builder: (_) => action == _HealthVoiceAction.capture
+            ? const HealthCapturePage()
+            : const HealthInsightsPage(),
+      ),
+    );
   }
 
   bool _looksLikeReminderConfirmation(String value) {

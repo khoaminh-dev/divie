@@ -11,7 +11,12 @@ import 'health_insights_page.dart';
 import 'ocr_service.dart';
 
 class HealthCapturePage extends StatefulWidget {
-  const HealthCapturePage({super.key});
+  const HealthCapturePage({super.key, this.openCameraImmediately = true});
+
+  /// Opening Health from the home screen should start the one useful action:
+  /// take a picture of the monitor. A manual route can still opt out later.
+  final bool openCameraImmediately;
+
   @override
   State<HealthCapturePage> createState() => _HealthCapturePageState();
 }
@@ -23,9 +28,9 @@ class _HealthCapturePageState extends State<HealthCapturePage> {
   BloodPressureReading? _reading;
   bool _busy = false;
   bool _saving = false;
+  bool _cameraLaunched = false;
   String? _error;
   late final HealthMeasurementDataService _historyService;
-  List<HealthMeasurementHistoryItem> _history = [];
 
   @override
   void initState() {
@@ -33,36 +38,51 @@ class _HealthCapturePageState extends State<HealthCapturePage> {
     _historyService = HealthMeasurementDataService(
       client: SupabaseBootstrap.enabled ? Supabase.instance.client : null,
     );
-    _loadHistory();
-  }
-
-  Future<void> _loadHistory() async {
-    try {
-      final history = await _historyService.load();
-      if (mounted) setState(() => _history = history);
-    } catch (_) {
-      // OCR remains usable even if the history table is not available yet.
+    if (widget.openCameraImmediately) {
+      WidgetsBinding.instance.addPostFrameCallback(
+        (_) => _openCamera(isInitialLaunch: true),
+      );
     }
   }
 
-  Future<void> _pick(ImageSource source) async {
-    final image = await _picker.pickImage(
-      source: source,
-      imageQuality: 85,
-      maxWidth: 1800,
-    );
-    if (image == null) return;
-    setState(() {
-      _image = image;
-      _imageBytes = null;
-      _reading = null;
-      _error = null;
-    });
-    final bytes = await image.readAsBytes();
-    if (mounted) setState(() => _imageBytes = bytes);
+  Future<void> _openCamera({bool isInitialLaunch = false}) async {
+    if (isInitialLaunch && _cameraLaunched) return;
+    if (isInitialLaunch) _cameraLaunched = true;
+    await _pick(ImageSource.camera, continueAutomatically: true);
   }
 
-  Future<void> _scan() async {
+  Future<void> _pick(
+    ImageSource source, {
+    bool continueAutomatically = true,
+  }) async {
+    try {
+      final image = await _picker.pickImage(
+        source: source,
+        imageQuality: 85,
+        maxWidth: 1800,
+      );
+      if (image == null) return;
+      setState(() {
+        _image = image;
+        _imageBytes = null;
+        _reading = null;
+        _error = null;
+      });
+      final bytes = await image.readAsBytes();
+      if (mounted) setState(() => _imageBytes = bytes);
+      if (continueAutomatically) await _scan(saveAndOpenInsights: true);
+    } catch (_) {
+      if (mounted) {
+        setState(
+          () => _error = source == ImageSource.camera
+              ? 'DiVie chưa mở được camera. Hãy cho phép quyền camera rồi thử lại.'
+              : 'DiVie chưa đọc được ảnh đã chọn. Hãy thử lại nhé.',
+        );
+      }
+    }
+  }
+
+  Future<void> _scan({bool saveAndOpenInsights = false}) async {
     final image = _image;
     if (image == null) return;
     setState(() {
@@ -74,7 +94,13 @@ class _HealthCapturePageState extends State<HealthCapturePage> {
         base64Image: base64Encode(await image.readAsBytes()),
         mimeType: image.mimeType ?? 'image/jpeg',
       );
+      if (result.systolic == null &&
+          result.diastolic == null &&
+          result.pulse == null) {
+        throw StateError('empty_reading');
+      }
       if (mounted) setState(() => _reading = result);
+      if (saveAndOpenInsights) await _saveReading(openInsights: true);
     } catch (_) {
       if (mounted) {
         setState(
@@ -87,7 +113,7 @@ class _HealthCapturePageState extends State<HealthCapturePage> {
     }
   }
 
-  Future<void> _saveReading() async {
+  Future<void> _saveReading({bool openInsights = false}) async {
     final reading = _reading;
     if (reading == null || _saving) return;
     setState(() {
@@ -95,15 +121,20 @@ class _HealthCapturePageState extends State<HealthCapturePage> {
       _error = null;
     });
     try {
-      final saved = await _historyService.saveOcr(reading);
+      await _historyService.saveOcr(reading);
       if (!mounted) return;
       setState(() {
-        _history = [saved, ..._history].take(20).toList();
         _saving = false;
       });
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Đã lưu chỉ số vào lịch sử sức khỏe.')),
-      );
+      if (openInsights) {
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(builder: (_) => const HealthInsightsPage()),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Đã lưu chỉ số vào lịch sử sức khỏe.')),
+        );
+      }
     } catch (_) {
       if (!mounted) return;
       setState(() {
@@ -127,23 +158,19 @@ class _HealthCapturePageState extends State<HealthCapturePage> {
         padding: const EdgeInsets.all(20),
         children: [
           const Text(
-            'Đọc chỉ số từ ảnh',
+            'Đọc chỉ số máy đo',
             style: TextStyle(fontSize: 25, fontWeight: FontWeight.w900),
           ),
           const SizedBox(height: 8),
           const Text(
-            'Chụp rõ màn hình máy đo. Kết quả chỉ để ghi nhận, bạn cần kiểm tra và xác nhận trước khi lưu.',
+            'Chụp rõ màn hình máy đo. DiVie sẽ đọc, lưu và mở biểu đồ sức khỏe cho bạn.',
           ),
           const SizedBox(height: 20),
-          OutlinedButton.icon(
-            onPressed: () => Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => const HealthInsightsPage()),
+          if (_imageBytes == null && _busy)
+            const _CaptureProgress(
+              title: 'Đang mở camera',
+              detail: 'Chụp rõ phần màn hình máy đo huyết áp.',
             ),
-            icon: const Icon(Icons.insights_rounded),
-            label: const Text('Xem biểu đồ & xu hướng'),
-          ),
-          const SizedBox(height: 12),
           if (_imageBytes != null)
             ClipRRect(
               borderRadius: BorderRadius.circular(24),
@@ -157,15 +184,15 @@ class _HealthCapturePageState extends State<HealthCapturePage> {
             children: [
               Expanded(
                 child: OutlinedButton.icon(
-                  onPressed: () => _pick(ImageSource.camera),
+                  onPressed: _busy ? null : _openCamera,
                   icon: const Icon(Icons.camera_alt),
-                  label: const Text('Chụp ảnh'),
+                  label: const Text('Chụp lại'),
                 ),
               ),
               const SizedBox(width: 12),
               Expanded(
                 child: OutlinedButton.icon(
-                  onPressed: () => _pick(ImageSource.gallery),
+                  onPressed: _busy ? null : () => _pick(ImageSource.gallery),
                   icon: const Icon(Icons.photo_library),
                   label: const Text('Chọn ảnh'),
                 ),
@@ -173,11 +200,17 @@ class _HealthCapturePageState extends State<HealthCapturePage> {
             ],
           ),
           const SizedBox(height: 12),
-          FilledButton.icon(
-            onPressed: _image == null || _busy ? null : _scan,
-            icon: const Icon(Icons.document_scanner),
-            label: Text(_busy ? 'Đang đọc ảnh…' : 'Đọc chỉ số'),
-          ),
+          if (_busy)
+            const _CaptureProgress(
+              title: 'Đang đọc và lưu chỉ số',
+              detail: 'Sau đó DiVie sẽ mở biểu đồ sức khỏe.',
+            )
+          else if (_image != null)
+            FilledButton.icon(
+              onPressed: () => _scan(saveAndOpenInsights: true),
+              icon: const Icon(Icons.document_scanner),
+              label: const Text('Đọc ảnh này'),
+            ),
           if (_error != null) ...[
             const SizedBox(height: 14),
             Text(
@@ -196,19 +229,47 @@ class _HealthCapturePageState extends State<HealthCapturePage> {
               onSave: _saveReading,
             ),
           ],
-          if (_history.isNotEmpty) ...[
-            const SizedBox(height: 26),
-            const Text(
-              'Lịch sử gần đây',
-              style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900),
-            ),
-            const SizedBox(height: 10),
-            ..._history.map(_HistoryTile.new),
-          ],
         ],
       ),
     );
   }
+}
+
+class _CaptureProgress extends StatelessWidget {
+  const _CaptureProgress({required this.title, required this.detail});
+
+  final String title;
+  final String detail;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    margin: const EdgeInsets.only(bottom: 14),
+    padding: const EdgeInsets.all(18),
+    decoration: BoxDecoration(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(22),
+    ),
+    child: Row(
+      children: [
+        const SizedBox(
+          width: 24,
+          height: 24,
+          child: CircularProgressIndicator(),
+        ),
+        const SizedBox(width: 14),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(title, style: const TextStyle(fontWeight: FontWeight.w900)),
+              const SizedBox(height: 3),
+              Text(detail, style: const TextStyle(color: Color(0xFF668092))),
+            ],
+          ),
+        ),
+      ],
+    ),
+  );
 }
 
 class _ReadingCard extends StatelessWidget {
@@ -249,26 +310,4 @@ class _ReadingCard extends StatelessWidget {
       ),
     ),
   );
-}
-
-class _HistoryTile extends StatelessWidget {
-  const _HistoryTile(this.item);
-
-  final HealthMeasurementHistoryItem item;
-
-  @override
-  Widget build(BuildContext context) {
-    final date = item.measuredAt.toLocal();
-    final stamp =
-        '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')} ${date.hour.toString().padLeft(2, '0')}:${date.minute.toString().padLeft(2, '0')}';
-    return Card(
-      elevation: 0,
-      margin: const EdgeInsets.only(bottom: 8),
-      child: ListTile(
-        leading: const Icon(Icons.favorite_rounded, color: Color(0xFF12A9B5)),
-        title: Text('${item.systolic ?? '—'} / ${item.diastolic ?? '—'} mmHg'),
-        subtitle: Text('Nhịp tim ${item.pulse ?? '—'} · $stamp'),
-      ),
-    );
-  }
 }

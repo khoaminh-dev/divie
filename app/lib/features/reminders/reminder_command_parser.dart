@@ -70,26 +70,28 @@ class ReminderCommandParser {
   }
 
   static bool _hasReminderIntent(String text) {
-    const markers = [
-      'nhắc',
-      'nhac',
-      'đặt lịch',
-      'dat lich',
-      'báo thức',
-      'bao thuc',
-      'hẹn giờ',
-      'hen gio',
-    ];
-    if (markers.any(text.contains)) {
+    final folded = _foldVietnamese(text);
+    const markers = ['nhac', 'dat lich', 'bao thuc', 'hen gio'];
+    if (markers.any(folded.contains)) {
       return true;
     }
-    return RegExp(r'\buống thuốc\b|\buong thuoc\b').hasMatch(text) &&
-        RegExp(
-          r'\b(lúc|luc|vào|vao|giờ|gio|h|g|sáng|sang|chiều|chieu|tối|toi)\b',
-        ).hasMatch(text);
+    final hasMedicine = RegExp(r'\b(thuoc|vitamin|vien)\b').hasMatch(folded);
+    final hasScheduleAction = RegExp(
+      r'\b(tao|dat|them|lich|bao|hen)\b',
+    ).hasMatch(folded);
+
+    // Speech-to-text sometimes mishears "nhắc". When a sentence still has a
+    // medicine reference plus a time or a scheduling verb, treating it as a
+    // reminder is much safer than sending it to the general AI conversation.
+    return hasMedicine && (hasScheduleAction || extractTime(text) != null);
   }
 
   static String _extractName(String text) {
+    final folded = _foldVietnamese(text);
+    if (folded.contains('thuoc') &&
+        RegExp(r'\b(tao|dat|them)\b').hasMatch(folded)) {
+      return 'Uống thuốc';
+    }
     final timeMatch = extractTime(text) == null
         ? null
         : RegExp(
@@ -157,4 +159,14 @@ class ReminderCommandParser {
       .replaceAll(RegExp(r'\s+'), ' ')
       .replaceAll('nhắc nhở', 'nhắc')
       .trim();
+
+  static String _foldVietnamese(String input) => input
+      .toLowerCase()
+      .replaceAll(RegExp(r'[àáạảãâầấậẩẫăằắặẳẵ]'), 'a')
+      .replaceAll(RegExp(r'[èéẹẻẽêềếệểễ]'), 'e')
+      .replaceAll(RegExp(r'[ìíịỉĩ]'), 'i')
+      .replaceAll(RegExp(r'[òóọỏõôồốộổỗơờớợởỡ]'), 'o')
+      .replaceAll(RegExp(r'[ùúụủũưừứựửữ]'), 'u')
+      .replaceAll(RegExp(r'[ỳýỵỷỹ]'), 'y')
+      .replaceAll('đ', 'd');
 }

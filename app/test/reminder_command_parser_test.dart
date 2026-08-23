@@ -41,6 +41,16 @@ void main() {
       expect(command.time, '16:00');
     });
 
+    test('handles a speech-to-text typo in a create-reminder command', () {
+      final command = ReminderCommandParser.tryParse(
+        'Tạo lịch nhát thuốc cho tôi vào lúc 12:43',
+      );
+
+      expect(command, isNotNull);
+      expect(command!.name, 'Uống thuốc');
+      expect(command.time, '12:43');
+    });
+
     test('keeps a reminder intent when the time is missing', () {
       final draft = ReminderCommandParser.parseDraft('Đặt lịch uống thuốc');
 

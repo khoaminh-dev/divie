@@ -311,7 +311,7 @@ class _VoiceAssistantPageState extends State<VoiceAssistantPage> {
         {
           'role': 'system',
           'content':
-              'Bạn là trợ lý DiVie cho người cao tuổi. Trả lời tiếng Việt ngắn, rõ, an toàn. Không tự tạo lịch nhắc thuốc, không tự nhận đã mở camera hoặc biểu đồ sức khỏe; các lệnh đó được ứng dụng xử lý riêng. Nếu cần làm rõ một việc khác, chỉ hỏi một câu ngắn.',
+              'Bạn là trợ lý DiVie cho người cao tuổi. Trả lời tiếng Việt ngắn, rõ, an toàn. Với yêu cầu nhắc thuốc, nếu người dùng chưa nói rõ giờ thì chỉ hỏi giờ cần nhắc; không nói rằng ứng dụng không thể tạo lịch. Không tự nhận đã mở camera hoặc biểu đồ sức khỏe khi chưa có xác nhận từ ứng dụng. Nếu cần làm rõ một việc khác, chỉ hỏi một câu ngắn.',
         },
         ...history,
         {'role': 'user', 'content': text},

@@ -52,7 +52,7 @@ class AccountProfileService {
         'id': user.id,
         'full_name': fullName,
         'email': email,
-        if (phone != 'Tài khoản') 'phone_number': phone,
+        if (phone != 'Người dùng DiVie') 'phone_number': phone,
       }, onConflict: 'id');
     } on PostgrestException {
       // Keep the app usable even when profile RLS is still being configured.
@@ -94,13 +94,13 @@ class AccountProfileService {
     for (final value in values) {
       if (value != null && value.trim().isNotEmpty) return value.trim();
     }
-    return 'Tài khoản';
+    return 'Người dùng DiVie';
   }
 
   static String _string(Object? value) => value is String ? value.trim() : '';
 
   static String _nameFromEmail(String email) {
     final value = email.split('@').first.trim();
-    return value.isEmpty ? 'Tài khoản' : value;
+    return value.isEmpty ? 'Người dùng DiVie' : value;
   }
 }

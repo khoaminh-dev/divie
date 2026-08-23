@@ -50,6 +50,24 @@ class NotificationService {
       minute,
     );
     if (!next.isAfter(now)) next = next.add(const Duration(days: 1));
+    final androidPlugin = _plugin
+        .resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin
+        >();
+    var scheduleMode = AndroidScheduleMode.inexactAllowWhileIdle;
+    try {
+      final canScheduleExactly = await androidPlugin
+          ?.canScheduleExactNotifications();
+      if (canScheduleExactly == false) {
+        await androidPlugin?.requestExactAlarmsPermission();
+      }
+      if (await androidPlugin?.canScheduleExactNotifications() == true) {
+        scheduleMode = AndroidScheduleMode.exactAllowWhileIdle;
+      }
+    } catch (_) {
+      // Android versions that do not expose this permission still receive an
+      // inexact reminder instead of failing to create the medicine schedule.
+    }
     await _plugin.zonedSchedule(
       _notificationId(reminder.id),
       'Đến giờ uống thuốc',
@@ -67,7 +85,7 @@ class NotificationService {
         ),
         iOS: DarwinNotificationDetails(),
       ),
-      androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
+      androidScheduleMode: scheduleMode,
       matchDateTimeComponents: DateTimeComponents.time,
       payload: 'medicine:${reminder.id}',
     );

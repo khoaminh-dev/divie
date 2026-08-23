@@ -36,9 +36,9 @@ Future<void> main() async {
 
 Future<void> _initializeNotificationsSafely() async {
   try {
-    await NotificationService.instance
-        .initialize()
-        .timeout(const Duration(seconds: 10));
+    await NotificationService.instance.initialize().timeout(
+      const Duration(seconds: 10),
+    );
   } catch (error, stackTrace) {
     // Notification permission/device issues must not prevent the app shell
     // from opening. Reminder records remain available in Supabase.
@@ -311,7 +311,7 @@ class _HomePage extends StatelessWidget {
             children: [
               _HomeTopBar(role: role, onNavigate: onNavigate),
               SizedBox(height: _clamp(constraints.maxWidth * .07, 26, 42)),
-              const _WeatherCard(),
+              _HealthHubCard(role: role, onNavigate: onNavigate),
               SizedBox(height: _clamp(constraints.maxWidth * .085, 28, 48)),
               _FeatureGrid(role: role, onNavigate: onNavigate),
               const SizedBox(height: 36),
@@ -359,7 +359,8 @@ class _HomeTopBar extends StatelessWidget {
                     ? null
                     : email.split('@').first.trim();
                 final profileName = snapshot.data?.name.trim();
-                final name = _usableAccountName(profileName) ??
+                final name =
+                    _usableAccountName(profileName) ??
                     _usableAccountName(emailName) ??
                     role.label;
                 return InkWell(
@@ -484,83 +485,103 @@ class _CircleButton extends StatelessWidget {
   }
 }
 
-class _WeatherCard extends StatelessWidget {
-  const _WeatherCard();
+class _HealthHubCard extends StatelessWidget {
+  const _HealthHubCard({required this.role, required this.onNavigate});
+
+  final AppRole role;
+  final ValueChanged<int> onNavigate;
 
   @override
   Widget build(BuildContext context) {
     return AspectRatio(
       aspectRatio: 2.12,
-      child: Container(
-        padding: const EdgeInsets.fromLTRB(34, 26, 28, 26),
-        decoration: BoxDecoration(
-          gradient: const LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [Color(0xFF2BBBC3), Color(0xFF087B83)],
+      child: Material(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(32),
+        child: InkWell(
+          onTap: () => Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const HealthCapturePage()),
           ),
           borderRadius: BorderRadius.circular(32),
-          boxShadow: const [
-            BoxShadow(
-              color: Color(0x3210A8B4),
-              blurRadius: 20,
-              offset: Offset(0, 10),
-            ),
-          ],
-        ),
-        child: LayoutBuilder(
-          builder: (context, constraints) {
-            final tempSize = _clamp(constraints.maxWidth * .18, 48, 78);
-            final citySize = _clamp(constraints.maxWidth * .06, 20, 29);
-            final detailSize = _clamp(constraints.maxWidth * .035, 13, 18);
-            return Stack(
-              children: [
-                Align(
-                  alignment: Alignment.topLeft,
-                  child: Text(
-                    '25°',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: tempSize,
-                      fontWeight: FontWeight.w200,
-                      height: .95,
-                    ),
-                  ),
-                ),
-                Align(
-                  alignment: const Alignment(.72, -.62),
-                  child: Icon(
-                    Icons.cloud,
-                    color: Colors.white.withValues(alpha: .92),
-                    size: _clamp(constraints.maxWidth * .22, 58, 96),
-                  ),
-                ),
-                Align(
-                  alignment: Alignment.bottomLeft,
-                  child: Text(
-                    'Hà Nội',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: citySize,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                ),
-                Align(
-                  alignment: Alignment.bottomRight,
-                  child: Text(
-                    'Nhiều mây\nH:28° | L:22°',
-                    textAlign: TextAlign.right,
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: detailSize,
-                      height: 1.35,
-                    ),
-                  ),
+          child: Container(
+            padding: const EdgeInsets.fromLTRB(34, 26, 28, 26),
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [Color(0xFF2BBBC3), Color(0xFF087B83)],
+              ),
+              borderRadius: BorderRadius.circular(32),
+              boxShadow: const [
+                BoxShadow(
+                  color: Color(0x3210A8B4),
+                  blurRadius: 20,
+                  offset: Offset(0, 10),
                 ),
               ],
-            );
-          },
+            ),
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final titleSize = _clamp(constraints.maxWidth * .10, 28, 42);
+                final detailSize = _clamp(constraints.maxWidth * .04, 14, 18);
+                return Stack(
+                  children: [
+                    Align(
+                      alignment: Alignment.topLeft,
+                      child: Text(
+                        role == AppRole.family
+                            ? 'Sức khỏe\người thân'
+                            : 'Sức khỏe\nhôm nay',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: titleSize,
+                          fontWeight: FontWeight.w800,
+                          height: 1.02,
+                        ),
+                      ),
+                    ),
+                    Align(
+                      alignment: const Alignment(.72, -.48),
+                      child: Icon(
+                        Icons.favorite_rounded,
+                        color: Colors.white.withValues(alpha: .92),
+                        size: _clamp(constraints.maxWidth * .22, 60, 98),
+                      ),
+                    ),
+                    Align(
+                      alignment: Alignment.bottomLeft,
+                      child: Text(
+                        role == AppRole.family
+                            ? 'Xem chỉ số và lịch sử đo'
+                            : 'Đọc chỉ số từ ảnh máy đo',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: detailSize,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                    Align(
+                      alignment: Alignment.bottomRight,
+                      child: Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: .2),
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(
+                          Icons.arrow_forward_rounded,
+                          color: Colors.white,
+                          size: 23,
+                        ),
+                      ),
+                    ),
+                  ],
+                );
+              },
+            ),
+          ),
         ),
       ),
     );
@@ -573,13 +594,21 @@ class _FeatureGrid extends StatelessWidget {
   final AppRole role;
   final ValueChanged<int> onNavigate;
 
-  static const features = [
-    _Feature(Icons.chat_bubble_rounded, 'Tin nhắn', action: 'messages'),
-    _Feature(Icons.contacts_rounded, 'Danh bạ', action: 'contacts'),
-    _Feature(Icons.settings_rounded, 'Cài đặt', action: 'settings'),
-    _Feature(Icons.favorite_rounded, 'Sức khỏe', action: 'health'),
-    _Feature(Icons.medication_rounded, 'Nhắc thuốc', action: 'medicine'),
+  List<_Feature> get features => [
+    const _Feature(Icons.chat_bubble_rounded, 'Tin nhắn', action: 'messages'),
+    const _Feature(Icons.contacts_rounded, 'Danh bạ', action: 'contacts'),
+    const _Feature(Icons.settings_rounded, 'Cài đặt', action: 'settings'),
     _Feature(
+      Icons.favorite_rounded,
+      role == AppRole.family ? 'Sức khỏe người thân' : 'Sức khỏe',
+      action: 'health',
+    ),
+    _Feature(
+      Icons.medication_rounded,
+      role == AppRole.family ? 'Quản lý thuốc' : 'Nhắc thuốc',
+      action: 'medicine',
+    ),
+    const _Feature(
       Icons.emergency_rounded,
       'Khẩn cấp',
       danger: true,
@@ -675,11 +704,15 @@ class _FeatureGrid extends StatelessWidget {
                       Navigator.pop(sheetContext);
                       try {
                         await EmergencyService.callNumber(contacts[index]);
-                      } catch (error) {
+                      } catch (_) {
                         if (context.mounted) {
-                          ScaffoldMessenger.of(
-                            context,
-                          ).showSnackBar(SnackBar(content: Text('$error')));
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text(
+                                'Không thể mở cuộc gọi. Hãy kiểm tra quyền gọi điện rồi thử lại.',
+                              ),
+                            ),
+                          );
                         }
                       }
                     },
@@ -689,11 +722,15 @@ class _FeatureGrid extends StatelessWidget {
           ),
         ),
       );
-    } catch (error) {
+    } catch (_) {
       if (context.mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('$error')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Không thể mở cuộc gọi. Hãy kiểm tra quyền gọi điện rồi thử lại.',
+            ),
+          ),
+        );
       }
     }
   }
@@ -1177,13 +1214,11 @@ class _AccountCard extends StatelessWidget {
         final emailName = authEmail == null || authEmail.isEmpty
             ? null
             : authEmail.split('@').first.trim();
-        final name = _usableAccountName(profile?.name) ??
+        final name =
+            _usableAccountName(profile?.name) ??
             _usableAccountName(emailName) ??
             role.label;
-        final email =
-            profile?.email ??
-            authEmail ??
-            'Chưa có email';
+        final email = profile?.email ?? authEmail ?? 'Chưa có email';
         return _SettingsCard(
           child: Row(
             children: [

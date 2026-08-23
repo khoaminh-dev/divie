@@ -27,7 +27,7 @@ void main() {
     expect(find.text('Tin nhắn'), findsOneWidget);
     expect(find.text('Danh bạ'), findsOneWidget);
     expect(find.text('Cài đặt'), findsOneWidget);
-    expect(find.text('Hà Nội'), findsOneWidget);
+    expect(find.textContaining('Sức khỏe'), findsWidgets);
     expect(find.byIcon(Icons.mic_rounded), findsOneWidget);
   });
 

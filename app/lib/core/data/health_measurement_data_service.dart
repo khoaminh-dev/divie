@@ -36,8 +36,9 @@ class HealthMeasurementHistoryItem {
       pulse: (row['heart_rate'] as num?)?.toInt(),
       source: row['source'] as String? ?? 'manual',
       measuredAt:
-          DateTime.tryParse(row['measured_at'] as String? ?? '') ??
-          DateTime.now(),
+          (DateTime.tryParse(row['measured_at'] as String? ?? '') ??
+                  DateTime.now())
+              .toLocal(),
       confidence: (rawPayload['confidence'] as num?)?.toDouble(),
     );
   }
@@ -61,8 +62,9 @@ class HealthMeasurementHistoryItem {
     pulse: (json['pulse'] as num?)?.toInt(),
     source: json['source'] as String? ?? 'manual',
     measuredAt:
-        DateTime.tryParse(json['measuredAt'] as String? ?? '') ??
-        DateTime.now(),
+        (DateTime.tryParse(json['measuredAt'] as String? ?? '') ??
+                DateTime.now())
+            .toLocal(),
     confidence: (json['confidence'] as num?)?.toDouble(),
   );
 }
@@ -105,7 +107,10 @@ class HealthMeasurementDataService {
   Future<HealthMeasurementHistoryItem> saveOcr(
     BloodPressureReading reading,
   ) async {
-    final measuredAt = DateTime.now();
+    // Store one unambiguous timestamp in the database, then show it in the
+    // device's local timezone. This prevents a reading from appearing under a
+    // wrong hour when the app is reopened on another device.
+    final measuredAt = DateTime.now().toUtc();
     final rawPayload = {
       'confidence': reading.confidence,
       'rawText': reading.rawText,

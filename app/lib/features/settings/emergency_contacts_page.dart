@@ -28,23 +28,45 @@ class _EmergencyContactsPageState extends State<EmergencyContactsPage> {
   }
 
   Future<void> _load() async {
-    final contacts = await _service.load();
-    for (var index = 0; index < contacts.length && index < 5; index++) {
-      _controllers[index].text = contacts[index];
+    try {
+      final contacts = await _service.load();
+      for (var index = 0; index < contacts.length && index < 5; index++) {
+        _controllers[index].text = contacts[index];
+      }
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Chưa tải được liên hệ khẩn cấp. Hãy thử lại sau.'),
+          ),
+        );
+      }
     }
     if (mounted) setState(() => _loading = false);
   }
 
   Future<void> _save() async {
     setState(() => _saving = true);
-    await _service.save(
-      _controllers.map((controller) => controller.text).toList(),
-    );
-    if (!mounted) return;
-    setState(() => _saving = false);
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Đã lưu danh sách liên hệ khẩn cấp.')),
-    );
+    try {
+      await _service.save(
+        _controllers.map((controller) => controller.text).toList(),
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Đã lưu danh sách liên hệ khẩn cấp.')),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Chưa lưu được liên hệ. Hãy kiểm tra kết nối rồi thử lại.',
+          ),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
   }
 
   @override
@@ -73,7 +95,7 @@ class _EmergencyContactsPageState extends State<EmergencyContactsPage> {
               padding: const EdgeInsets.fromLTRB(20, 8, 20, 28),
               children: [
                 const Text(
-                  'Khi bấm Khẩn cấp, DiVie sẽ gọi lần lượt từ số 1 đến số 5.',
+                  'DiVie gọi số 1 trước. Nếu chưa liên lạc được, ứng dụng sẽ hiện các số tiếp theo để bạn gọi nhanh.',
                   style: TextStyle(color: DivieColors.muted, fontSize: 16),
                 ),
                 const SizedBox(height: 18),

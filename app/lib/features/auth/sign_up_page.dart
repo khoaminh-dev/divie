@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../core/data/account_profile_service.dart';
+import '../../core/data/device_registration_service.dart';
+import '../../core/roles/app_role.dart';
 import '../../main.dart';
 
 class SignUpPage extends StatefulWidget {
@@ -21,6 +23,7 @@ class _SignUpPageState extends State<SignUpPage> {
   bool _obscureConfirmPassword = true;
   bool _isLoading = false;
   String? _errorMessage;
+  AppRole _role = AppRole.elder;
 
   @override
   void dispose() {
@@ -44,6 +47,7 @@ class _SignUpPageState extends State<SignUpPage> {
       final response = await Supabase.instance.client.auth.signUp(
         email: email,
         password: _passwordController.text,
+        data: {'divie_role': _role.storageValue},
       );
 
       if (!mounted) return;
@@ -54,12 +58,16 @@ class _SignUpPageState extends State<SignUpPage> {
         await AccountProfileService(
           Supabase.instance.client,
         ).ensureCurrentProfile();
+        await AppRoleStore().save(_role);
+        await DeviceRegistrationService(
+          client: Supabase.instance.client,
+        ).syncRole(_role);
         if (!mounted) return;
         Navigator.of(context).pop();
       } else if (mounted) {
         setState(
           () => _errorMessage =
-              'Tài khoản chưa tạo phiên đăng nhập. Hãy tắt yêu cầu xác nhận email trong Supabase.',
+              'Hệ thống chưa thể đăng nhập ngay sau khi đăng ký. Vui lòng thử lại sau ít phút.',
         );
       }
     } on AuthException catch (error) {
@@ -92,14 +100,14 @@ class _SignUpPageState extends State<SignUpPage> {
         message.contains('rate limit') ||
         message.contains('too many') ||
         message.contains('over_email_send_rate_limit')) {
-      return 'Supabase đang giới hạn gửi email. DiVie không dùng xác nhận email; hãy tắt yêu cầu xác nhận email trong Supabase để đăng ký ngay.';
+      return 'Hệ thống đang nhận quá nhiều yêu cầu đăng ký. Bạn thử lại sau ít phút nhé.';
     }
     if (message.contains('invalid email') ||
         message.contains('email_address_invalid') ||
         message.contains('email address is invalid')) {
       return 'Email chưa đúng định dạng. Hãy nhập dạng ten@mien.com.';
     }
-    return 'Đăng ký chưa thành công: ${error.message}';
+    return 'Đăng ký chưa thành công. Bạn kiểm tra lại kết nối rồi thử lại nhé.';
   }
 
   @override
@@ -140,7 +148,48 @@ class _SignUpPageState extends State<SignUpPage> {
                       'Đăng ký để bắt đầu sử dụng DiVie.',
                       style: TextStyle(color: DivieColors.muted, fontSize: 16),
                     ),
-                    const SizedBox(height: 28),
+                    const SizedBox(height: 22),
+                    const Text(
+                      'Bạn đang dùng DiVie với vai trò nào?',
+                      style: TextStyle(
+                        color: DivieColors.navy,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    SegmentedButton<AppRole>(
+                      segments: const [
+                        ButtonSegment(
+                          value: AppRole.elder,
+                          icon: Icon(Icons.elderly_rounded),
+                          label: Text('Người cao tuổi'),
+                        ),
+                        ButtonSegment(
+                          value: AppRole.family,
+                          icon: Icon(Icons.family_restroom_rounded),
+                          label: Text('Người thân'),
+                        ),
+                      ],
+                      selected: {_role},
+                      showSelectedIcon: false,
+                      style: ButtonStyle(
+                        visualDensity: VisualDensity.comfortable,
+                        foregroundColor: WidgetStateProperty.resolveWith(
+                          (states) => states.contains(WidgetState.selected)
+                              ? Colors.white
+                              : DivieColors.deepTeal,
+                        ),
+                        backgroundColor: WidgetStateProperty.resolveWith(
+                          (states) => states.contains(WidgetState.selected)
+                              ? DivieColors.teal
+                              : Colors.white,
+                        ),
+                      ),
+                      onSelectionChanged: (selected) =>
+                          setState(() => _role = selected.first),
+                    ),
+                    const SizedBox(height: 24),
                     TextFormField(
                       controller: _emailController,
                       keyboardType: TextInputType.emailAddress,

@@ -5,7 +5,6 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-import '../../core/config/app_config.dart';
 import '../../core/auth/supabase_bootstrap.dart';
 import '../../core/data/health_measurement_data_service.dart';
 import 'health_insights_page.dart';
@@ -76,10 +75,11 @@ class _HealthCapturePageState extends State<HealthCapturePage> {
         mimeType: image.mimeType ?? 'image/jpeg',
       );
       if (mounted) setState(() => _reading = result);
-    } catch (error) {
+    } catch (_) {
       if (mounted) {
         setState(
-          () => _error = error.toString().replaceFirst('Exception: ', ''),
+          () => _error =
+              'Không đọc được chỉ số từ ảnh. Hãy chụp rõ màn hình máy đo rồi thử lại.',
         );
       }
     } finally {
@@ -104,12 +104,12 @@ class _HealthCapturePageState extends State<HealthCapturePage> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Đã lưu chỉ số vào lịch sử sức khỏe.')),
       );
-    } catch (error) {
+    } catch (_) {
       if (!mounted) return;
       setState(() {
         _saving = false;
         _error =
-            'Không lưu được lịch sử: ${error.toString().replaceFirst('Exception: ', '')}';
+            'Chưa thể lưu chỉ số lúc này. Hãy kiểm tra kết nối rồi thử lại.';
       });
     }
   }
@@ -205,11 +205,6 @@ class _HealthCapturePageState extends State<HealthCapturePage> {
             const SizedBox(height: 10),
             ..._history.map(_HistoryTile.new),
           ],
-          const SizedBox(height: 14),
-          Text(
-            'API OCR: ${AppConfig.voiceBaseUrl}',
-            style: const TextStyle(fontSize: 12, color: Colors.grey),
-          ),
         ],
       ),
     );

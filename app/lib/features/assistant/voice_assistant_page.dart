@@ -26,7 +26,12 @@ class _AssistantRequestException implements Exception {
 }
 
 class VoiceAssistantPage extends StatefulWidget {
-  const VoiceAssistantPage({super.key});
+  const VoiceAssistantPage({super.key, this.embedded = false});
+
+  /// The main screen opens the assistant as a focused panel instead of
+  /// navigating people away from what they were doing. The full page remains
+  /// available from Settings for longer conversations and history later on.
+  final bool embedded;
 
   @override
   State<VoiceAssistantPage> createState() => _VoiceAssistantPageState();
@@ -272,9 +277,8 @@ class _VoiceAssistantPageState extends State<VoiceAssistantPage> {
         } catch (error, stackTrace) {
           debugPrint('DiVie reminder create failed: $error');
           debugPrintStack(stackTrace: stackTrace);
-          final answer = error.toString().contains(
-                'medicine_reminders_remote_unavailable',
-              )
+          final answer =
+              error.toString().contains('medicine_reminders_remote_unavailable')
               ? 'Ứng dụng chưa kết nối tài khoản. Bạn đăng nhập lại rồi thử tạo lịch nhé.'
               : 'Chưa lưu được lịch nhắc thuốc. Bạn thử lại nhé.';
           if (mounted) setState(() => _answer = answer);
@@ -359,12 +363,14 @@ class _VoiceAssistantPageState extends State<VoiceAssistantPage> {
 
   bool _looksLikeReminderConfirmation(String value) {
     final text = value.toLowerCase();
-    final claimsSaved = text.contains('đã tạo') ||
+    final claimsSaved =
+        text.contains('đã tạo') ||
         text.contains('đã đặt') ||
         text.contains('đã lưu') ||
         text.contains('tạo thành công') ||
         text.contains('đặt thành công');
-    final reminderTopic = text.contains('nhắc') ||
+    final reminderTopic =
+        text.contains('nhắc') ||
         text.contains('thuốc') ||
         text.contains('uống thuốc') ||
         text.contains('báo thức');
@@ -381,71 +387,94 @@ class _VoiceAssistantPageState extends State<VoiceAssistantPage> {
   @override
   Widget build(BuildContext context) {
     final bottomInset = MediaQuery.viewInsetsOf(context).bottom;
+    final content = SingleChildScrollView(
+      padding: EdgeInsets.fromLTRB(
+        24,
+        widget.embedded ? 8 : 24,
+        24,
+        24 + bottomInset,
+      ),
+      child: Column(
+        mainAxisSize: widget.embedded ? MainAxisSize.min : MainAxisSize.max,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            widget.embedded ? 'Bạn cần DiVie giúp gì?' : 'Nói điều bạn cần',
+            style: const TextStyle(
+              fontSize: 26,
+              fontWeight: FontWeight.w900,
+              color: DivieColors.navy,
+            ),
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            'Ví dụ: “Nhắc tôi uống thuốc lúc 4 giờ chiều”.',
+            style: TextStyle(color: DivieColors.muted, fontSize: 16),
+          ),
+          const SizedBox(height: 22),
+          _VoiceBubble(
+            label: 'Bạn nói',
+            text: _transcript.isEmpty
+                ? 'Chạm micro rồi nói điều bạn cần'
+                : _transcript,
+          ),
+          const SizedBox(height: 12),
+          _VoiceBubble(
+            label: 'DiVie trả lời',
+            text: _sending
+                ? 'Đang xử lý…'
+                : (_answer.isEmpty
+                      ? 'DiVie sẽ làm ngay những việc đơn giản như nhắc thuốc, gọi hoặc nhắn cho người thân.'
+                      : _answer),
+          ),
+          const SizedBox(height: 22),
+          Center(
+            child: FloatingActionButton.large(
+              backgroundColor: _listening
+                  ? DivieColors.danger
+                  : DivieColors.teal,
+              onPressed: _toggleListening,
+              child: Icon(
+                _listening ? Icons.stop_rounded : Icons.mic_rounded,
+                color: Colors.white,
+                size: 36,
+              ),
+            ),
+          ),
+          const SizedBox(height: 10),
+          Center(
+            child: Text(
+              !_ready
+                  ? 'Đang chuẩn bị micro…'
+                  : (_listening ? 'Đang nghe… chạm lại để gửi' : 'Chạm để nói'),
+              style: const TextStyle(
+                color: DivieColors.muted,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+          if (widget.embedded) ...[
+            const SizedBox(height: 12),
+            TextButton.icon(
+              onPressed: () {
+                Navigator.of(context).pop();
+                Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const VoiceAssistantPage()),
+                );
+              },
+              icon: const Icon(Icons.history_rounded),
+              label: const Text('Mở trợ lý đầy đủ'),
+            ),
+          ],
+        ],
+      ),
+    );
+
+    if (widget.embedded) return content;
+
     return Scaffold(
       appBar: AppBar(title: const Text('Trợ lý DiVie')),
-      body: SafeArea(
-        child: SingleChildScrollView(
-          padding: EdgeInsets.fromLTRB(24, 24, 24, 24 + bottomInset),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              const Text(
-                'Nói điều bạn cần',
-                style: TextStyle(
-                  fontSize: 26,
-                  fontWeight: FontWeight.w900,
-                  color: DivieColors.navy,
-                ),
-              ),
-              const SizedBox(height: 8),
-              const Text(
-                'Ví dụ: “Nhắc tôi uống thuốc lúc 4 giờ chiều”.',
-                style: TextStyle(color: DivieColors.muted, fontSize: 16),
-              ),
-              const SizedBox(height: 28),
-              _VoiceBubble(
-                label: 'Bạn nói',
-                text: _transcript.isEmpty
-                    ? 'Bấm micro để bắt đầu'
-                    : _transcript,
-              ),
-              const SizedBox(height: 14),
-              _VoiceBubble(
-                label: 'DiVie trả lời',
-                text: _sending
-                    ? 'Đang suy nghĩ…'
-                    : (_answer.isEmpty ? 'Chưa có câu trả lời' : _answer),
-              ),
-              const SizedBox(height: 32),
-              Center(
-                child: FloatingActionButton.large(
-                  backgroundColor: _listening
-                      ? DivieColors.danger
-                      : DivieColors.teal,
-                  onPressed: _toggleListening,
-                  child: Icon(
-                    _listening ? Icons.stop_rounded : Icons.mic_rounded,
-                    color: Colors.white,
-                    size: 36,
-                  ),
-                ),
-              ),
-              const SizedBox(height: 12),
-              Center(
-                child: Text(
-                  !_ready
-                      ? 'Đang xin quyền micro…'
-                      : (_listening ? 'Đang nghe…' : 'Chạm để nói'),
-                  style: const TextStyle(
-                    color: DivieColors.muted,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
+      body: SafeArea(child: content),
     );
   }
 }

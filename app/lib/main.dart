@@ -251,9 +251,21 @@ class _DivieShellState extends State<DivieShell> {
 
   void _select(int index) {
     if (index == 2) {
-      Navigator.push(
-        context,
-        MaterialPageRoute(builder: (_) => const VoiceAssistantPage()),
+      showModalBottomSheet<void>(
+        context: context,
+        isScrollControlled: true,
+        useSafeArea: true,
+        backgroundColor: Colors.transparent,
+        builder: (context) => Container(
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.sizeOf(context).height * .82,
+          ),
+          decoration: const BoxDecoration(
+            color: DivieColors.background,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(32)),
+          ),
+          child: const VoiceAssistantPage(embedded: true),
+        ),
       );
       return;
     }
@@ -694,9 +706,7 @@ class _FeatureGrid extends StatelessWidget {
         if (openSettings == true && context.mounted) {
           await Navigator.push(
             context,
-            MaterialPageRoute(
-              builder: (_) => const EmergencyContactsPage(),
-            ),
+            MaterialPageRoute(builder: (_) => const EmergencyContactsPage()),
           );
         }
         return;

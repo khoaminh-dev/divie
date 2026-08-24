@@ -277,9 +277,19 @@ class LiveMessagesPage extends StatefulWidget {
   State<LiveMessagesPage> createState() => _LiveMessagesPageState();
 }
 
+class _MessagesOverview {
+  const _MessagesOverview({
+    required this.conversations,
+    required this.contacts,
+  });
+
+  final List<ConversationRecord> conversations;
+  final List<ContactRecord> contacts;
+}
+
 class _LiveMessagesPageState extends State<LiveMessagesPage> {
   late final AppDataService _service;
-  late Future<List<ConversationRecord>> _future;
+  late Future<_MessagesOverview> _future;
   final _searchController = TextEditingController();
   String _query = '';
   Timer? _refreshTimer;
@@ -289,7 +299,7 @@ class _LiveMessagesPageState extends State<LiveMessagesPage> {
   void initState() {
     super.initState();
     _service = AppDataService(Supabase.instance.client);
-    _future = _service.loadConversations();
+    _future = _loadOverview();
     if (widget.initialRecipientId?.trim().isNotEmpty == true) {
       unawaited(_openInitialRecipient());
     }
@@ -313,13 +323,24 @@ class _LiveMessagesPageState extends State<LiveMessagesPage> {
         )
         .subscribe();
     _refreshTimer = Timer.periodic(const Duration(seconds: 12), (_) {
-      if (mounted) setState(() => _future = _service.loadConversations());
+      if (mounted) setState(() => _future = _loadOverview());
     });
   }
 
   void _reload() {
     if (!mounted) return;
-    setState(() => _future = _service.loadConversations());
+    setState(() => _future = _loadOverview());
+  }
+
+  Future<_MessagesOverview> _loadOverview() async {
+    final results = await Future.wait([
+      _service.loadConversations(),
+      _service.loadContacts(),
+    ]);
+    return _MessagesOverview(
+      conversations: results[0] as List<ConversationRecord>,
+      contacts: results[1] as List<ContactRecord>,
+    );
   }
 
   Future<void> _openInitialRecipient() async {
@@ -350,6 +371,24 @@ class _LiveMessagesPageState extends State<LiveMessagesPage> {
   void _search(String value) =>
       setState(() => _query = value.trim().toLowerCase());
 
+  Future<void> _openContact(ContactRecord contact) async {
+    try {
+      final roomId = await _service.createOrGetDirectChat(contact.id);
+      if (!mounted) return;
+      await Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => _ChatDetailPage(roomId: roomId, title: contact.name),
+        ),
+      );
+      _reload();
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Không thể mở cuộc trò chuyện: $error')),
+      );
+    }
+  }
+
   @override
   void dispose() {
     _refreshTimer?.cancel();
@@ -369,7 +408,7 @@ class _LiveMessagesPageState extends State<LiveMessagesPage> {
       controller: _searchController,
       onSearch: _search,
       onRefresh: _reload,
-      body: FutureBuilder<List<ConversationRecord>>(
+      body: FutureBuilder<_MessagesOverview>(
         future: _future,
         builder: (context, snapshot) {
           if (snapshot.connectionState != ConnectionState.done) {
@@ -380,39 +419,75 @@ class _LiveMessagesPageState extends State<LiveMessagesPage> {
           if (snapshot.hasError) {
             return _DataError(error: snapshot.error, onRetry: _reload);
           }
-          final conversations = (snapshot.data ?? const <ConversationRecord>[])
+          final overview = snapshot.data;
+          final conversations =
+              (overview?.conversations ?? const <ConversationRecord>[])
+                  .where(
+                    (conversation) =>
+                        _query.isEmpty ||
+                        conversation.title.toLowerCase().contains(_query) ||
+                        conversation.preview.toLowerCase().contains(_query),
+                  )
+                  .toList();
+          final activeContactIds = conversations
+              .map((conversation) => conversation.otherUserId)
+              .whereType<String>()
+              .toSet();
+          final contacts = (overview?.contacts ?? const <ContactRecord>[])
               .where(
-                (conversation) =>
-                    _query.isEmpty ||
-                    conversation.title.toLowerCase().contains(_query) ||
-                    conversation.preview.toLowerCase().contains(_query),
+                (contact) =>
+                    !activeContactIds.contains(contact.id) &&
+                    (_query.isEmpty ||
+                        contact.name.toLowerCase().contains(_query) ||
+                        contact.phone.toLowerCase().contains(_query) ||
+                        contact.email.toLowerCase().contains(_query)),
               )
               .toList();
-          if (conversations.isEmpty) {
+          if (conversations.isEmpty && contacts.isEmpty) {
             return const _EmptyState(
-              icon: Icons.chat_bubble_outline_rounded,
-              title: 'Chưa có cuộc trò chuyện',
-              subtitle: 'Mở Danh bạ và chọn một người để bắt đầu nhắn tin.',
+              icon: Icons.people_outline_rounded,
+              title: 'Chưa có người dùng DiVie khác',
+              subtitle: 'Các tài khoản đã đăng ký sẽ tự xuất hiện ở đây.',
             );
           }
-          return ListView.separated(
+          return ListView(
             padding: const EdgeInsets.only(bottom: 24),
-            itemCount: conversations.length,
-            separatorBuilder: (_, _) => const SizedBox(height: 10),
-            itemBuilder: (context, index) {
-              final conversation = conversations[index];
-              return _ConversationTile(
-                conversation: conversation,
-                onTap: () => Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (_) => _ChatDetailPage(
-                      roomId: conversation.id,
-                      title: conversation.title,
+            children: [
+              if (conversations.isNotEmpty) ...[
+                const _LiveSectionTitle(
+                  title: 'Cuộc trò chuyện',
+                  subtitle: 'Tin nhắn gần đây',
+                ),
+                for (final conversation in conversations) ...[
+                  _ConversationTile(
+                    conversation: conversation,
+                    onTap: () => Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => _ChatDetailPage(
+                          roomId: conversation.id,
+                          title: conversation.title,
+                        ),
+                      ),
                     ),
                   ),
+                  const SizedBox(height: 10),
+                ],
+              ],
+              if (contacts.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                const _LiveSectionTitle(
+                  title: 'Người dùng DiVie',
+                  subtitle: 'Tất cả tài khoản đã đăng ký',
                 ),
-              );
-            },
+                for (final contact in contacts) ...[
+                  _LiveContactTile(
+                    contact: contact,
+                    onTap: () => _openContact(contact),
+                  ),
+                  const SizedBox(height: 10),
+                ],
+              ],
+            ],
           );
         },
       ),

@@ -117,6 +117,7 @@ class _VoiceAssistantPageState extends State<VoiceAssistantPage> {
     final ready = await _speech.initialize();
     await _tts.setLanguage('vi-VN');
     await _tts.setSpeechRate(.48);
+    await _tts.awaitSpeakCompletion(true);
     if (!mounted) return;
     setState(() => _ready = ready);
     if (ready && widget.embedded) unawaited(_toggleListening());

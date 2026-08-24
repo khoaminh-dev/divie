@@ -182,18 +182,18 @@ class _HealthCapturePageState extends State<HealthCapturePage> {
             ),
           SizedBox(
             width: double.infinity,
-            height: _image == null ? 98 : 82,
+            height: _image == null ? 128 : 104,
             child: FilledButton.icon(
               onPressed: _busy ? null : _openCamera,
               style: FilledButton.styleFrom(
                 backgroundColor: const Color(0xFF087A84),
                 foregroundColor: Colors.white,
                 textStyle: const TextStyle(
-                  fontSize: 22,
+                  fontSize: 24,
                   fontWeight: FontWeight.w900,
                 ),
               ),
-              icon: const Icon(Icons.camera_alt_rounded, size: 36),
+              icon: const Icon(Icons.camera_alt_rounded, size: 42),
               label: Text(_image == null ? 'Chụp ảnh máy đo' : 'Chụp lại ảnh'),
             ),
           ),

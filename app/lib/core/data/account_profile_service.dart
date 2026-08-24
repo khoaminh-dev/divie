@@ -45,7 +45,12 @@ class AccountProfileService {
       _string(user.userMetadata?['name']),
       _nameFromEmail(email),
     ]);
-    final phone = _first([_string(existing?['phone_number']), user.phone]);
+    final phone = _first([
+      _string(existing?['phone_number']),
+      user.phone,
+      _string(user.userMetadata?['phone_number']),
+      _string(user.userMetadata?['phone']),
+    ]);
 
     try {
       await client.from('profiles').upsert({
@@ -86,7 +91,12 @@ class AccountProfileService {
       id: user.id,
       name: name,
       email: email,
-      phone: _first([_string(profile?['phone_number']), user.phone]),
+      phone: _first([
+        _string(profile?['phone_number']),
+        user.phone,
+        _string(user.userMetadata?['phone_number']),
+        _string(user.userMetadata?['phone']),
+      ]),
     );
   }
 

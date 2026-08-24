@@ -16,6 +16,7 @@ class SignUpPage extends StatefulWidget {
 class _SignUpPageState extends State<SignUpPage> {
   final _formKey = GlobalKey<FormState>();
   final _emailController = TextEditingController();
+  final _phoneController = TextEditingController();
   final _passwordController = TextEditingController();
   final _confirmPasswordController = TextEditingController();
 
@@ -28,6 +29,7 @@ class _SignUpPageState extends State<SignUpPage> {
   @override
   void dispose() {
     _emailController.dispose();
+    _phoneController.dispose();
     _passwordController.dispose();
     _confirmPasswordController.dispose();
     super.dispose();
@@ -37,6 +39,7 @@ class _SignUpPageState extends State<SignUpPage> {
     if (!_formKey.currentState!.validate()) return;
 
     final email = _emailController.text.trim().toLowerCase();
+    final phone = _normalizePhone(_phoneController.text);
 
     setState(() {
       _errorMessage = null;
@@ -47,7 +50,7 @@ class _SignUpPageState extends State<SignUpPage> {
       final response = await Supabase.instance.client.auth.signUp(
         email: email,
         password: _passwordController.text,
-        data: {'divie_role': _role.storageValue},
+        data: {'divie_role': _role.storageValue, 'phone_number': phone},
       );
 
       if (!mounted) return;
@@ -210,6 +213,25 @@ class _SignUpPageState extends State<SignUpPage> {
                     ),
                     const SizedBox(height: 16),
                     TextFormField(
+                      controller: _phoneController,
+                      keyboardType: TextInputType.phone,
+                      textInputAction: TextInputAction.next,
+                      autofillHints: const [AutofillHints.telephoneNumber],
+                      decoration: _inputDecoration(
+                        'Số điện thoại',
+                        Icons.phone_rounded,
+                      ),
+                      validator: (value) {
+                        final phone = _normalizePhone(value ?? '');
+                        if (phone.isEmpty) return 'Nhập số điện thoại của bạn.';
+                        if (!RegExp(r'^0(?:3|5|7|8|9)\d{8}$').hasMatch(phone)) {
+                          return 'Nhập số điện thoại Việt Nam hợp lệ.';
+                        }
+                        return null;
+                      },
+                    ),
+                    const SizedBox(height: 16),
+                    TextFormField(
                       controller: _passwordController,
                       obscureText: _obscurePassword,
                       textInputAction: TextInputAction.next,
@@ -343,6 +365,15 @@ class _SignUpPageState extends State<SignUpPage> {
         borderSide: const BorderSide(color: DivieColors.teal, width: 2),
       ),
     );
+  }
+
+  static String _normalizePhone(String value) {
+    final digits = value.replaceAll(RegExp(r'[^0-9+]'), '');
+    if (digits.startsWith('+84')) return '0${digits.substring(3)}';
+    if (digits.startsWith('84') && digits.length == 11) {
+      return '0${digits.substring(2)}';
+    }
+    return digits;
   }
 }
 

@@ -1,7 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 
-const fallbackUrl = 'https://api.divie.site';
-const fallbackAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiIsImlzcyI6InN1cGFiYXNlIiwiaWF0IjoxNzgzNzg0MDIwLCJleHAiOjIwOTkxNDQwMjB9.fPxsaTp7x0vgiPmKGUESNRXCA1l83L5flD2KmHMRID8';
+const fallbackUrl = 'https://urvauveiaudpqdattvxf.supabase.co';
+const fallbackAnonKey = 'sb_publishable_20Zu3KRfuZgOdhCxP28bLw_G2YYXGgR';
 
 export const supabase = createClient(
   import.meta.env.VITE_SUPABASE_URL ?? fallbackUrl,

@@ -70,13 +70,18 @@ class HealthMeasurementHistoryItem {
 }
 
 class HealthMeasurementDataService {
-  HealthMeasurementDataService({this.client});
+  HealthMeasurementDataService({this.client, this.ownerId});
 
   static const _localKey = 'divie.health_measurement_history';
 
   final SupabaseClient? client;
+  final String? ownerId;
 
   bool get isRemote => client?.auth.currentUser != null;
+
+  String get _ownerId => ownerId?.trim().isNotEmpty == true
+      ? ownerId!.trim()
+      : client!.auth.currentUser!.id;
 
   Future<List<HealthMeasurementHistoryItem>> load({int limit = 20}) async {
     if (!isRemote) {
@@ -95,7 +100,7 @@ class HealthMeasurementDataService {
         .select(
           'id,systolic_bp,diastolic_bp,heart_rate,source,raw_payload,measured_at',
         )
-        .eq('user_id', client!.auth.currentUser!.id)
+        .eq('user_id', _ownerId)
         .order('measured_at', ascending: false)
         .limit(limit);
     return (rows as List)
@@ -120,7 +125,7 @@ class HealthMeasurementDataService {
       final row = await client!
           .from('health_measurement_sessions')
           .insert({
-            'user_id': client!.auth.currentUser!.id,
+            'user_id': _ownerId,
             'systolic_bp': reading.systolic,
             'diastolic_bp': reading.diastolic,
             'heart_rate': reading.pulse,

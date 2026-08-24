@@ -8,7 +8,9 @@ import '../../core/auth/supabase_bootstrap.dart';
 import '../../core/data/health_measurement_data_service.dart';
 
 class HealthInsightsPage extends StatefulWidget {
-  const HealthInsightsPage({super.key});
+  const HealthInsightsPage({super.key, this.ownerId});
+
+  final String? ownerId;
 
   @override
   State<HealthInsightsPage> createState() => _HealthInsightsPageState();
@@ -26,6 +28,7 @@ class _HealthInsightsPageState extends State<HealthInsightsPage> {
     super.initState();
     _service = HealthMeasurementDataService(
       client: SupabaseBootstrap.enabled ? Supabase.instance.client : null,
+      ownerId: widget.ownerId,
     );
     _load();
   }

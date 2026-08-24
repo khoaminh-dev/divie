@@ -264,7 +264,14 @@ class _LiveContactsPageState extends State<LiveContactsPage> {
 }
 
 class LiveMessagesPage extends StatefulWidget {
-  const LiveMessagesPage({super.key});
+  const LiveMessagesPage({
+    super.key,
+    this.initialRecipientId,
+    this.initialRecipientName,
+  });
+
+  final String? initialRecipientId;
+  final String? initialRecipientName;
 
   @override
   State<LiveMessagesPage> createState() => _LiveMessagesPageState();
@@ -283,6 +290,9 @@ class _LiveMessagesPageState extends State<LiveMessagesPage> {
     super.initState();
     _service = AppDataService(Supabase.instance.client);
     _future = _service.loadConversations();
+    if (widget.initialRecipientId?.trim().isNotEmpty == true) {
+      unawaited(_openInitialRecipient());
+    }
     _realtimeChannel = Supabase.instance.client
         .channel('divie-conversations')
         .onPostgresChanges(
@@ -310,6 +320,31 @@ class _LiveMessagesPageState extends State<LiveMessagesPage> {
   void _reload() {
     if (!mounted) return;
     setState(() => _future = _service.loadConversations());
+  }
+
+  Future<void> _openInitialRecipient() async {
+    final recipientId = widget.initialRecipientId?.trim();
+    if (recipientId == null || recipientId.isEmpty) return;
+    try {
+      final roomId = await _service.createOrGetDirectChat(recipientId);
+      if (!mounted) return;
+      await Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => _ChatDetailPage(
+            roomId: roomId,
+            title: widget.initialRecipientName?.trim().isNotEmpty == true
+                ? widget.initialRecipientName!.trim()
+                : 'Người thân',
+          ),
+        ),
+      );
+      _reload();
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Không thể mở cuộc trò chuyện: $error')),
+      );
+    }
   }
 
   void _search(String value) =>

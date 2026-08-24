@@ -6,14 +6,26 @@ import '../../features/reminders/reminder_model.dart';
 import '../../features/reminders/reminder_store.dart';
 
 class ReminderDataService {
-  ReminderDataService({this.client, this.allowLocalFallback = true});
+  ReminderDataService({
+    this.client,
+    this.allowLocalFallback = true,
+    this.accountId,
+  });
 
   final SupabaseClient? client;
   final bool allowLocalFallback;
+  final String? accountId;
   final ReminderStore _local = ReminderStore();
   bool _localMigrationAttempted = false;
 
   bool get isRemote => client != null && client!.auth.currentUser != null;
+
+  String get _accountId => accountId?.trim().isNotEmpty == true
+      ? accountId!.trim()
+      : client!.auth.currentUser!.id;
+
+  bool get _usesCurrentAccount =>
+      !isRemote || _accountId == client!.auth.currentUser!.id;
 
   Future<List<MedicineReminder>> load() async {
     if (!isRemote) {
@@ -23,11 +35,11 @@ class ReminderDataService {
       return _local.load();
     }
 
-    await _migrateLocalReminders();
+    if (_usesCurrentAccount) await _migrateLocalReminders();
     final rows = await client!
         .from('medicine_reminders')
         .select('id,name,time,note,enabled')
-        .eq('account_id', client!.auth.currentUser!.id)
+        .eq('account_id', _accountId)
         .order('time');
     return (rows as List)
         .whereType<Map<String, dynamic>>()
@@ -47,7 +59,7 @@ class ReminderDataService {
     final row = await client!
         .from('medicine_reminders')
         .insert({
-          'account_id': client!.auth.currentUser!.id,
+          'account_id': _accountId,
           'name': item.name,
           'time': item.time,
           'note': item.note,
@@ -78,7 +90,7 @@ class ReminderDataService {
           'enabled': item.enabled,
         })
         .eq('id', item.id)
-        .eq('account_id', client!.auth.currentUser!.id);
+        .eq('account_id', _accountId);
   }
 
   Future<void> delete(MedicineReminder item) async {
@@ -94,7 +106,7 @@ class ReminderDataService {
         .from('medicine_reminders')
         .delete()
         .eq('id', item.id)
-        .eq('account_id', client!.auth.currentUser!.id);
+        .eq('account_id', _accountId);
   }
 
   Future<Map<int, String>> loadStatuses(DateTime day) async {
@@ -114,7 +126,7 @@ class ReminderDataService {
     final rows = await client!
         .from('medicine_reminder_events')
         .select('reminder_id,status')
-        .eq('account_id', client!.auth.currentUser!.id)
+        .eq('account_id', _accountId)
         .eq('scheduled_on', date);
     return <int, String>{
       for (final row in (rows as List).whereType<Map<String, dynamic>>())
@@ -137,7 +149,7 @@ class ReminderDataService {
       return;
     }
     await client!.from('medicine_reminder_events').upsert({
-      'account_id': client!.auth.currentUser!.id,
+      'account_id': _accountId,
       'reminder_id': reminder.id,
       'scheduled_on': date,
       'status': status,
@@ -164,7 +176,7 @@ class ReminderDataService {
       final remoteRows = await client!
           .from('medicine_reminders')
           .select('name,time,note,enabled')
-          .eq('account_id', client!.auth.currentUser!.id);
+          .eq('account_id', _accountId);
       final existingKeys = (remoteRows as List)
           .whereType<Map<String, dynamic>>()
           .map(_reminderKey)
@@ -173,7 +185,7 @@ class ReminderDataService {
           .where((item) => !existingKeys.contains(_reminderKey(item)))
           .map(
             (item) => {
-              'account_id': client!.auth.currentUser!.id,
+              'account_id': _accountId,
               'name': item.name,
               'time': item.time,
               'note': item.note,

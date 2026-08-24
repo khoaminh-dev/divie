@@ -13,9 +13,10 @@ const _teal = Color(0xFF12A9B5);
 const _navy = Color(0xFF10264D);
 
 class RemindersPage extends StatefulWidget {
-  const RemindersPage({super.key, required this.role});
+  const RemindersPage({super.key, required this.role, this.accountId});
 
   final AppRole role;
+  final String? accountId;
 
   @override
   State<RemindersPage> createState() => _RemindersPageState();
@@ -35,6 +36,7 @@ class _RemindersPageState extends State<RemindersPage> {
     _service = ReminderDataService(
       client: SupabaseBootstrap.enabled ? Supabase.instance.client : null,
       allowLocalFallback: false,
+      accountId: widget.accountId,
     );
     _load();
     _subscribeRealtime();
@@ -44,9 +46,12 @@ class _RemindersPageState extends State<RemindersPage> {
     if (!SupabaseBootstrap.enabled) return;
     final user = Supabase.instance.client.auth.currentUser;
     if (user == null) return;
+    final accountId = widget.accountId?.trim().isNotEmpty == true
+        ? widget.accountId!.trim()
+        : user.id;
 
     _realtimeChannel = Supabase.instance.client
-        .channel('divie-reminders-${user.id}')
+        .channel('divie-reminders-$accountId')
         .onPostgresChanges(
           event: PostgresChangeEvent.all,
           schema: 'public',
@@ -54,7 +59,7 @@ class _RemindersPageState extends State<RemindersPage> {
           filter: PostgresChangeFilter(
             type: PostgresChangeFilterType.eq,
             column: 'account_id',
-            value: user.id,
+            value: accountId,
           ),
           callback: (_) {
             if (mounted) unawaited(_load());
@@ -67,7 +72,7 @@ class _RemindersPageState extends State<RemindersPage> {
           filter: PostgresChangeFilter(
             type: PostgresChangeFilterType.eq,
             column: 'account_id',
-            value: user.id,
+            value: accountId,
           ),
           callback: (_) {
             if (mounted) unawaited(_load());
@@ -80,8 +85,10 @@ class _RemindersPageState extends State<RemindersPage> {
     try {
       final items = await _service.load();
       final statuses = await _service.loadStatuses(DateTime.now());
-      for (final item in items) {
-        await NotificationService.instance.trySchedule(item);
+      if (widget.role != AppRole.family) {
+        for (final item in items) {
+          await NotificationService.instance.trySchedule(item);
+        }
       }
       if (!mounted) return;
       setState(() {
@@ -108,9 +115,9 @@ class _RemindersPageState extends State<RemindersPage> {
     if (result == null) return;
     try {
       final created = await _service.create(result);
-      final notificationReady = await NotificationService.instance.trySchedule(
-        created,
-      );
+      final notificationReady = widget.role == AppRole.family
+          ? true
+          : await NotificationService.instance.trySchedule(created);
       if (!mounted) return;
       setState(() => _items = [..._items, created]..sort(_sortByTime));
       if (!notificationReady) {

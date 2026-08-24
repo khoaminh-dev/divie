@@ -21,42 +21,46 @@ void main() {
     // Keep each test isolated from the previous viewport.
   });
 
-  testWidgets('Home matches the mobile content contract', (tester) async {
+  testWidgets('Caregiver dashboard matches the mobile content contract', (
+    tester,
+  ) async {
     await pumpAt(tester, const Size(393, 852));
 
+    expect(find.textContaining('Kết nối người thân'), findsWidgets);
+    expect(find.text('Theo dõi sức khỏe'), findsOneWidget);
+    expect(find.text('Quản lý thuốc'), findsOneWidget);
     expect(find.text('Tin nhắn'), findsOneWidget);
-    expect(find.text('Danh bạ'), findsOneWidget);
-    expect(find.text('Cài đặt'), findsOneWidget);
-    expect(find.textContaining('Sức khỏe'), findsWidgets);
+    expect(find.text('Người được chăm sóc'), findsOneWidget);
     expect(find.byIcon(Icons.mic_rounded), findsOneWidget);
   });
 
-  testWidgets('The shared shell remains usable on a small phone', (
+  testWidgets('The caregiver dashboard remains usable on a small phone', (
     tester,
   ) async {
     await pumpAt(tester, const Size(320, 640));
 
-    expect(find.byType(SingleChildScrollView), findsOneWidget);
-    expect(find.text('Khẩn cấp'), findsOneWidget);
+    expect(find.byType(ListView), findsOneWidget);
+    expect(find.text('Người được chăm sóc'), findsOneWidget);
   });
 
-  testWidgets('Settings, contacts and messages are reachable from the nav', (
-    tester,
-  ) async {
-    await pumpAt(tester, const Size(393, 852));
+  testWidgets(
+    'Settings, care connections and messages are reachable from the nav',
+    (tester) async {
+      await pumpAt(tester, const Size(393, 852));
 
-    await tester.tap(find.byIcon(Icons.settings_rounded).last);
-    await tester.pumpAndSettle();
-    expect(find.text('Tài khoản, trợ lý AI và thiết bị'), findsOneWidget);
+      await tester.tap(find.byIcon(Icons.tune_rounded).last);
+      await tester.pumpAndSettle();
+      expect(find.text('Tài khoản, trợ lý AI và thiết bị'), findsOneWidget);
 
-    await tester.tap(find.byIcon(Icons.contacts_rounded).last);
-    await tester.pumpAndSettle();
-    expect(find.text('Chưa kết nối danh bạ'), findsOneWidget);
+      await tester.tap(find.byIcon(Icons.groups_rounded).last);
+      await tester.pumpAndSettle();
+      expect(find.text('Người được chăm sóc'), findsOneWidget);
 
-    await tester.tap(find.byIcon(Icons.chat_bubble_rounded).last);
-    await tester.pumpAndSettle();
-    expect(find.text('Chưa kết nối tin nhắn'), findsOneWidget);
+      await tester.tap(find.byIcon(Icons.chat_bubble_rounded).last);
+      await tester.pumpAndSettle();
+      expect(find.text('Chưa kết nối tin nhắn'), findsOneWidget);
 
-    await tester.binding.setSurfaceSize(null);
-  });
+      await tester.binding.setSurfaceSize(null);
+    },
+  );
 }

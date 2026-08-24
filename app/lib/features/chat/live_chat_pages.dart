@@ -295,7 +295,8 @@ class _MessagesOverview {
 
 class _LiveMessagesPageState extends State<LiveMessagesPage> {
   late final AppDataService _service;
-  late Future<_MessagesOverview> _future;
+  _MessagesOverview? _overview;
+  Object? _overviewError;
   final _searchController = TextEditingController();
   String _query = '';
   Timer? _refreshTimer;
@@ -305,7 +306,7 @@ class _LiveMessagesPageState extends State<LiveMessagesPage> {
   void initState() {
     super.initState();
     _service = AppDataService(Supabase.instance.client);
-    _future = _loadOverview();
+    unawaited(_reloadOverview());
     if (widget.initialRecipientId?.trim().isNotEmpty == true) {
       unawaited(_openInitialRecipient());
     }
@@ -329,19 +330,27 @@ class _LiveMessagesPageState extends State<LiveMessagesPage> {
         )
         .subscribe();
     _refreshTimer = Timer.periodic(const Duration(seconds: 12), (_) {
-      if (mounted) {
-        setState(() {
-          _future = _loadOverview();
-        });
-      }
+      _reload();
     });
   }
 
   void _reload() {
     if (!mounted) return;
-    setState(() {
-      _future = _loadOverview();
-    });
+    unawaited(_reloadOverview());
+  }
+
+  Future<void> _reloadOverview() async {
+    try {
+      final overview = await _loadOverview();
+      if (!mounted) return;
+      setState(() {
+        _overview = overview;
+        _overviewError = null;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _overviewError = error);
+    }
   }
 
   Future<_MessagesOverview> _loadOverview() async {
@@ -420,18 +429,15 @@ class _LiveMessagesPageState extends State<LiveMessagesPage> {
       controller: _searchController,
       onSearch: _search,
       onRefresh: _reload,
-      body: FutureBuilder<_MessagesOverview>(
-        future: _future,
-        builder: (context, snapshot) {
-          if (snapshot.connectionState != ConnectionState.done) {
-            return const Center(
-              child: CircularProgressIndicator(color: DivieColors.teal),
-            );
+      body: Builder(
+        builder: (context) {
+          if (_overview == null) {
+            if (_overviewError != null) {
+              return _DataError(error: _overviewError, onRetry: _reload);
+            }
+            return const SizedBox.expand();
           }
-          if (snapshot.hasError) {
-            return _DataError(error: snapshot.error, onRetry: _reload);
-          }
-          final overview = snapshot.data;
+          final overview = _overview;
           final conversations =
               (overview?.conversations ?? const <ConversationRecord>[])
                   .where(
@@ -520,7 +526,8 @@ class _ChatDetailPage extends StatefulWidget {
 class _ChatDetailPageState extends State<_ChatDetailPage> {
   final _controller = TextEditingController();
   late final AppDataService _service;
-  late Future<List<MessageRecord>> _future;
+  List<MessageRecord>? _messages;
+  Object? _messagesError;
   Timer? _refreshTimer;
   RealtimeChannel? _realtimeChannel;
   bool _sending = false;
@@ -529,7 +536,7 @@ class _ChatDetailPageState extends State<_ChatDetailPage> {
   void initState() {
     super.initState();
     _service = AppDataService(Supabase.instance.client);
-    _future = _service.loadMessages(widget.roomId);
+    unawaited(_reloadMessages());
     _realtimeChannel = Supabase.instance.client
         .channel('divie-room-${widget.roomId}')
         .onPostgresChanges(
@@ -543,20 +550,30 @@ class _ChatDetailPageState extends State<_ChatDetailPage> {
           ),
           callback: (_) {
             if (mounted && !_sending) {
-              setState(() {
-                _future = _service.loadMessages(widget.roomId);
-              });
+              unawaited(_reloadMessages());
             }
           },
         )
         .subscribe();
     _refreshTimer = Timer.periodic(const Duration(seconds: 5), (_) {
       if (mounted && !_sending) {
-        setState(() {
-          _future = _service.loadMessages(widget.roomId);
-        });
+        unawaited(_reloadMessages());
       }
     });
+  }
+
+  Future<void> _reloadMessages() async {
+    try {
+      final messages = await _service.loadMessages(widget.roomId);
+      if (!mounted) return;
+      setState(() {
+        _messages = messages;
+        _messagesError = null;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _messagesError = error);
+    }
   }
 
   @override
@@ -577,11 +594,7 @@ class _ChatDetailPageState extends State<_ChatDetailPage> {
     try {
       await _service.sendMessage(widget.roomId, text);
       _controller.clear();
-      if (mounted) {
-        setState(() {
-          _future = _service.loadMessages(widget.roomId);
-        });
-      }
+      unawaited(_reloadMessages());
     } catch (error) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -610,23 +623,18 @@ class _ChatDetailPageState extends State<_ChatDetailPage> {
       body: Column(
         children: [
           Expanded(
-            child: FutureBuilder<List<MessageRecord>>(
-              future: _future,
-              builder: (context, snapshot) {
-                if (snapshot.connectionState != ConnectionState.done) {
-                  return const Center(
-                    child: CircularProgressIndicator(color: DivieColors.teal),
-                  );
+            child: Builder(
+              builder: (context) {
+                if (_messages == null) {
+                  if (_messagesError != null) {
+                    return _DataError(
+                      error: _messagesError,
+                      onRetry: _reloadMessages,
+                    );
+                  }
+                  return const SizedBox.expand();
                 }
-                if (snapshot.hasError) {
-                  return _DataError(
-                    error: snapshot.error,
-                    onRetry: () => setState(() {
-                      _future = _service.loadMessages(widget.roomId);
-                    }),
-                  );
-                }
-                final messages = snapshot.data ?? const <MessageRecord>[];
+                final messages = _messages!;
                 if (messages.isEmpty) {
                   return const _EmptyState(
                     icon: Icons.forum_outlined,

@@ -285,7 +285,7 @@ class _DivieShellState extends State<DivieShell> {
                     ),
                   ],
                 ),
-                child: const VoiceAssistantPage(embedded: true),
+                child: VoiceAssistantPage(embedded: true, onNavigate: _select),
               ),
             ),
           ),

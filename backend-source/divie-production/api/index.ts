@@ -5,6 +5,33 @@ type ChatMessage = {
   content: string | Array<Record<string, unknown>>;
 };
 
+type VoiceIntent = {
+  action: string;
+  screen?: string;
+  contactName?: string;
+  message?: string;
+  medicineName?: string;
+  time?: string;
+  reply?: string;
+};
+
+const voiceIntentActions = new Set([
+  'open_screen',
+  'call_contact',
+  'compose_message',
+  'create_reminder',
+  'conversation'
+]);
+
+const voiceScreens = new Set([
+  'health_capture',
+  'health_insights',
+  'reminders',
+  'messages',
+  'contacts',
+  'settings'
+]);
+
 // This policy is server-side so every client gets the same safe, senior-first
 // behavior. Client-provided system messages are intentionally not forwarded.
 const divieAssistantPolicy = `
@@ -87,6 +114,39 @@ function cleanAssistantText(value: string): string {
   return value.replace(/<think>[\s\S]*?<\/think>/gi, '').replace(/<think>[\s\S]*$/gi, '').trim();
 }
 
+function textField(value: unknown, maxLength = 280): string | undefined {
+  return typeof value === 'string' && value.trim()
+    ? value.trim().slice(0, maxLength)
+    : undefined;
+}
+
+function parseVoiceIntent(value: string): VoiceIntent {
+  const parsed = parseJsonObject(value) ?? {};
+  const action = textField(parsed.action, 48) ?? 'conversation';
+  if (!voiceIntentActions.has(action)) {
+    return {
+      action: 'conversation',
+      reply: 'Con chưa hiểu việc bác muốn làm. Bác nói lại giúp con nhé.'
+    };
+  }
+  const screen = textField(parsed.screen, 48);
+  if (action === 'open_screen' && !screen || screen && !voiceScreens.has(screen)) {
+    return {
+      action: 'conversation',
+      reply: 'Con chưa hiểu màn hình bác muốn mở. Bác nói lại giúp con nhé.'
+    };
+  }
+  return {
+    action,
+    screen,
+    contactName: textField(parsed.contactName, 100),
+    message: textField(parsed.message, 500),
+    medicineName: textField(parsed.medicineName, 120),
+    time: textField(parsed.time, 12),
+    reply: textField(parsed.reply, 320)
+  };
+}
+
 async function callGroq(body: {
   messages: ChatMessage[];
   model?: string;
@@ -137,6 +197,40 @@ async function handleChat(req: IncomingMessage, res: ServerResponse): Promise<vo
     responseFormat: body.responseFormat && typeof body.responseFormat === 'object' ? body.responseFormat as Record<string, unknown> : undefined
   });
   writeJson(res, result.status, result.body);
+}
+
+async function handleVoiceIntent(req: IncomingMessage, res: ServerResponse): Promise<void> {
+  if (req.method !== 'POST') return writeJson(res, 405, { error: 'method_not_allowed' });
+  const body = await readJson(req, 100_000);
+  const transcript = textField(body.transcript, 1000);
+  if (!transcript) return writeJson(res, 400, { error: 'missing_transcript' });
+
+  const policy = `
+Bạn là bộ điều phối hành động của ứng dụng DiVie. Đọc câu nói tiếng Việt của bác và chỉ trả JSON hợp lệ, không markdown.
+
+Chọn đúng một action:
+- open_screen: mở một màn hình. screen chỉ được là health_capture, health_insights, reminders, messages, contacts, settings.
+- call_contact: bác yêu cầu gọi điện. contactName là tên đúng như bác đã nói.
+- compose_message: bác yêu cầu nhắn tin. contactName và message có thể thiếu nếu bác chưa nói đủ.
+- create_reminder: bác yêu cầu tạo nhắc thuốc. medicineName và time có thể thiếu nếu bác chưa nói đủ.
+- conversation: không có thao tác phù hợp hoặc cần phản hồi thông thường. reply là câu tiếng Việt ngắn, xưng con và gọi người dùng là bác.
+
+Nguyên tắc: không tự thêm tên liên hệ, nội dung, giờ hoặc màn hình. “Con trai”, “con gái”, “vợ”, “chồng” chỉ là contactName nếu bác nói như vậy, không đổi thành một tên khác. Với yêu cầu nhắn tin thiếu người nhận hoặc nội dung, chọn compose_message và để phần thiếu rỗng. Với câu không rõ, chọn conversation và reply đúng: “Con chưa nghe rõ. Bác nói lại giúp con nhé.”
+
+Schema JSON: {"action":"...","screen":"...","contactName":"...","message":"...","medicineName":"...","time":"HH:mm","reply":"..."}
+`.trim();
+  const result = await callGroq({
+    messages: [
+      { role: 'system', content: policy },
+      { role: 'user', content: transcript }
+    ],
+    temperature: 0,
+    maxCompletionTokens: 220,
+    responseFormat: { type: 'json_object' }
+  });
+  if (!result.ok) return writeJson(res, result.status, result.body);
+  const content = (result.body as { content?: string }).content ?? '';
+  return writeJson(res, 200, { success: true, intent: parseVoiceIntent(content) });
 }
 
 async function handleVision(req: IncomingMessage, res: ServerResponse): Promise<void> {
@@ -218,7 +312,8 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
   try {
     if (path === '/health' || path === '/api/health') return writeJson(res, 200, { ok: true, service: 'divie-voice-backend', runtime: 'vercel-serverless', groq: process.env.GROQ_API_KEY ? 'configured' : 'missing', visionModel: process.env.GROQ_VISION_MODEL ?? 'qwen/qwen3.6-27b', ts: Date.now() });
     if (path === '/ready') return writeJson(res, 200, { ok: true });
-    if (path === '/api/ai/chat' || path === '/api/ai/intent') return handleChat(req, res);
+    if (path === '/api/ai/chat') return handleChat(req, res);
+    if (path === '/api/ai/intent') return handleVoiceIntent(req, res);
     if (path === '/api/vision/describe') return handleVision(req, res);
     if (path === '/ocr/blood-pressure' || path === '/api/ocr/blood-pressure') return handleBloodPressureOcr(req, res);
     if (path === '/openai/realtime/client-secret') return writeJson(res, 503, { error: 'openai_realtime_disabled', message: 'DiVie is configured for Groq text + local TTS.' });

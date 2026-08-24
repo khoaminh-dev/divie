@@ -11,12 +11,16 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../core/auth/supabase_bootstrap.dart';
 import '../../core/config/app_config.dart';
+import '../../core/data/app_data_service.dart';
 import '../../core/data/reminder_data_service.dart';
 import '../../core/device/emergency_service.dart';
+import '../../core/roles/app_role.dart';
 import '../../main.dart';
+import '../chat/live_chat_pages.dart';
 import '../reminders/notification_service.dart';
 import '../reminders/reminder_command_parser.dart';
 import '../reminders/reminder_model.dart';
+import '../reminders/reminders_page.dart';
 import '../health/health_capture_page.dart';
 import '../health/health_insights_page.dart';
 
@@ -32,13 +36,53 @@ class _AssistantRequestException implements Exception {
 
 enum _HealthVoiceAction { capture, insights }
 
+class _VoiceIntent {
+  const _VoiceIntent({
+    required this.action,
+    this.screen,
+    this.contactName,
+    this.message,
+    this.reply,
+  });
+
+  final String action;
+  final String? screen;
+  final String? contactName;
+  final String? message;
+  final String? reply;
+
+  factory _VoiceIntent.fromJson(Map<String, dynamic> json) => _VoiceIntent(
+    action: json['action'] as String? ?? 'conversation',
+    screen: json['screen'] as String?,
+    contactName: json['contactName'] as String?,
+    message: json['message'] as String?,
+    reply: json['reply'] as String?,
+  );
+}
+
+class _PendingVoiceMessage {
+  const _PendingVoiceMessage({this.recipient, this.content});
+
+  final ContactRecord? recipient;
+  final String? content;
+
+  _PendingVoiceMessage copyWith({ContactRecord? recipient, String? content}) =>
+      _PendingVoiceMessage(
+        recipient: recipient ?? this.recipient,
+        content: content ?? this.content,
+      );
+}
+
 class VoiceAssistantPage extends StatefulWidget {
-  const VoiceAssistantPage({super.key, this.embedded = false});
+  const VoiceAssistantPage({super.key, this.embedded = false, this.onNavigate});
 
   /// The main screen opens the assistant as a focused panel instead of
   /// navigating people away from what they were doing. The full page remains
   /// available from Settings for longer conversations and history later on.
   final bool embedded;
+
+  /// Lets the floating assistant switch the shell tab after it closes.
+  final ValueChanged<int>? onNavigate;
 
   @override
   State<VoiceAssistantPage> createState() => _VoiceAssistantPageState();
@@ -55,6 +99,7 @@ class _VoiceAssistantPageState extends State<VoiceAssistantPage> {
   String _transcript = '';
   String _answer = '';
   ReminderDraft? _pendingReminder;
+  _PendingVoiceMessage? _pendingMessage;
   final List<Map<String, String>> _conversation = [];
   late final ReminderDataService _reminderService;
 
@@ -285,6 +330,10 @@ class _VoiceAssistantPageState extends State<VoiceAssistantPage> {
   Future<void> _ask(String text) async {
     setState(() => _sending = true);
     try {
+      if (_pendingMessage != null) {
+        await _continueMessageDraft(text);
+        return;
+      }
       final callTarget = _callTargetFor(text);
       if (callTarget != null) {
         await _handleVoiceCall(callTarget);
@@ -359,6 +408,8 @@ class _VoiceAssistantPageState extends State<VoiceAssistantPage> {
         return;
       }
 
+      if (await _tryRunAgentIntent(text)) return;
+
       final headers = {'Content-Type': 'application/json'};
       if (SupabaseBootstrap.enabled) {
         final token = Supabase.instance.client.auth.currentSession?.accessToken;
@@ -430,6 +481,257 @@ class _VoiceAssistantPageState extends State<VoiceAssistantPage> {
       if (mounted) setState(() => _sending = false);
     }
   }
+
+  Future<bool> _tryRunAgentIntent(String transcript) async {
+    try {
+      final intent = await _requestVoiceIntent(transcript);
+      switch (intent.action) {
+        case 'open_screen':
+          final screen = intent.screen;
+          if (screen == null || screen.isEmpty) return false;
+          await _openToolScreen(screen);
+          return true;
+        case 'call_contact':
+          final name = intent.contactName;
+          if (name == null || name.isEmpty) {
+            await _setCallAnswer(
+              'Bác muốn con gọi cho ai? Bác nói tên đúng như trong danh bạ nhé.',
+            );
+          } else {
+            await _handleVoiceCall(name);
+          }
+          return true;
+        case 'compose_message':
+          await _beginMessageDraft(
+            contactName: intent.contactName,
+            content: intent.message,
+          );
+          return true;
+        case 'create_reminder':
+          await _setCallAnswer(
+            intent.reply ??
+                'Bác nói rõ tên thuốc và giờ cần nhắc giúp con nhé.',
+          );
+          return true;
+        case 'conversation':
+          return false;
+        default:
+          return false;
+      }
+    } catch (error) {
+      debugPrint('DiVie voice intent routing failed: $error');
+      // Conversational assistance remains available if the router is
+      // temporarily unavailable during a backend rollout.
+      return false;
+    }
+  }
+
+  Future<_VoiceIntent> _requestVoiceIntent(String transcript) async {
+    final headers = {'Content-Type': 'application/json'};
+    if (SupabaseBootstrap.enabled) {
+      final token = Supabase.instance.client.auth.currentSession?.accessToken;
+      if (token != null) headers['Authorization'] = 'Bearer $token';
+    }
+    final response = await http
+        .post(
+          Uri.parse('${AppConfig.voiceBaseUrl}/api/ai/intent'),
+          headers: headers,
+          body: jsonEncode({'transcript': transcript}),
+        )
+        .timeout(const Duration(seconds: 20));
+    final decoded = jsonDecode(response.body);
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw _AssistantRequestException(
+        _extractErrorText(decoded),
+        statusCode: response.statusCode,
+      );
+    }
+    if (decoded is! Map || decoded['intent'] is! Map) {
+      throw const _AssistantRequestException('invalid_intent_response');
+    }
+    return _VoiceIntent.fromJson(
+      Map<String, dynamic>.from(decoded['intent'] as Map),
+    );
+  }
+
+  Future<void> _openToolScreen(String screen) async {
+    switch (screen) {
+      case 'health_capture':
+        await _openHealthAction(_HealthVoiceAction.capture);
+        return;
+      case 'health_insights':
+        await _openHealthAction(_HealthVoiceAction.insights);
+        return;
+      case 'reminders':
+        await _announceAndOpen(
+          'Con mở lịch nhắc thuốc cho bác nhé.',
+          const RemindersPage(role: AppRole.elder),
+        );
+        return;
+      case 'messages':
+        await _openShellTab(
+          index: 1,
+          answer: 'Con mở Tin nhắn cho bác nhé.',
+          fallback: const LiveMessagesPage(),
+        );
+        return;
+      case 'contacts':
+        await _openShellTab(
+          index: 3,
+          answer: 'Con mở Danh bạ cho bác nhé.',
+          fallback: const LiveContactsPage(),
+        );
+        return;
+      case 'settings':
+        await _openShellTab(index: 4, answer: 'Con mở Cài đặt cho bác nhé.');
+        return;
+    }
+    await _setCallAnswer(
+      'Con chưa hiểu màn hình bác muốn mở. Bác nói lại nhé.',
+    );
+  }
+
+  Future<void> _openShellTab({
+    required int index,
+    required String answer,
+    Widget? fallback,
+  }) async {
+    final navigator = Navigator.of(context, rootNavigator: true);
+    if (mounted) setState(() => _answer = answer);
+    await _speakSafely(answer);
+    if (widget.embedded) {
+      await navigator.maybePop();
+    }
+    final onNavigate = widget.onNavigate;
+    if (onNavigate != null) {
+      onNavigate(index);
+      return;
+    }
+    if (fallback != null && mounted) {
+      await navigator.push(MaterialPageRoute(builder: (_) => fallback));
+    }
+  }
+
+  Future<void> _announceAndOpen(String answer, Widget page) async {
+    final navigator = Navigator.of(context, rootNavigator: true);
+    if (mounted) setState(() => _answer = answer);
+    await _speakSafely(answer);
+    if (widget.embedded) await navigator.maybePop();
+    await Future<void>.delayed(const Duration(milliseconds: 180));
+    await navigator.push(MaterialPageRoute(builder: (_) => page));
+  }
+
+  Future<void> _beginMessageDraft({
+    required String? contactName,
+    required String? content,
+  }) async {
+    final name = contactName?.trim() ?? '';
+    if (name.isEmpty) {
+      _pendingMessage = const _PendingVoiceMessage();
+      await _setCallAnswer('Bác muốn nhắn tin cho ai ạ?');
+      return;
+    }
+    if (!SupabaseBootstrap.enabled ||
+        Supabase.instance.client.auth.currentUser == null) {
+      await _setCallAnswer(
+        'Bác đăng nhập tài khoản DiVie rồi con mới gửi được tin nhắn nhé.',
+      );
+      return;
+    }
+    final recipient = await _findDiVieContact(name);
+    if (recipient == null) return;
+    final message = content?.trim() ?? '';
+    if (message.isEmpty) {
+      _pendingMessage = _PendingVoiceMessage(recipient: recipient);
+      await _setCallAnswer('Bác muốn nhắn gì cho ${recipient.name} ạ?');
+      return;
+    }
+    _pendingMessage = _PendingVoiceMessage(
+      recipient: recipient,
+      content: message,
+    );
+    await _askForMessageConfirmation(recipient, message);
+  }
+
+  Future<ContactRecord?> _findDiVieContact(String requestedName) async {
+    final target = _normalizedText(requestedName);
+    final contacts = await AppDataService(
+      Supabase.instance.client,
+    ).loadContacts();
+    final matches = contacts
+        .where((contact) {
+          final name = _normalizedText(contact.name);
+          return name == target ||
+              name.contains(target) ||
+              target.contains(name);
+        })
+        .toList(growable: false);
+    if (matches.isEmpty) {
+      _pendingMessage = null;
+      await _setCallAnswer(
+        'Con không tìm thấy “$requestedName” trong danh bạ DiVie. Bác nói đúng tên người nhận giúp con nhé.',
+      );
+      return null;
+    }
+    if (matches.length > 1) {
+      _pendingMessage = null;
+      await _setCallAnswer(
+        'Con tìm thấy nhiều người tên “$requestedName”. Bác nói tên đầy đủ hơn giúp con nhé.',
+      );
+      return null;
+    }
+    return matches.single;
+  }
+
+  Future<void> _continueMessageDraft(String transcript) async {
+    final draft = _pendingMessage;
+    if (draft == null) return;
+    final normalized = _normalizedText(transcript);
+    if (_isVoiceCancellation(normalized)) {
+      _pendingMessage = null;
+      await _setCallAnswer('Con đã hủy soạn tin nhắn nhé.');
+      return;
+    }
+    if (draft.recipient == null) {
+      await _beginMessageDraft(contactName: transcript, content: null);
+      return;
+    }
+    if (draft.content == null || draft.content!.trim().isEmpty) {
+      _pendingMessage = draft.copyWith(content: transcript.trim());
+      await _askForMessageConfirmation(draft.recipient!, transcript.trim());
+      return;
+    }
+    if (!_isVoiceConfirmation(normalized)) {
+      await _setCallAnswer('Bác nói “gửi đi” để con gửi, hoặc nói “hủy” nhé.');
+      return;
+    }
+    final recipient = draft.recipient!;
+    final content = draft.content!.trim();
+    try {
+      final service = AppDataService(Supabase.instance.client);
+      final roomId = await service.createOrGetDirectChat(recipient.id);
+      await service.sendMessage(roomId, content);
+      _pendingMessage = null;
+      await _setCallAnswer('Con đã gửi tin cho ${recipient.name} rồi ạ.');
+    } catch (error) {
+      debugPrint('DiVie voice message send failed: $error');
+      await _setCallAnswer('Con chưa gửi được tin. Bác thử lại giúp con nhé.');
+    }
+  }
+
+  Future<void> _askForMessageConfirmation(
+    ContactRecord recipient,
+    String content,
+  ) => _setCallAnswer(
+    'Bác muốn gửi cho ${recipient.name}: “$content”. Bác nói “gửi đi” để xác nhận nhé.',
+  );
+
+  bool _isVoiceConfirmation(String value) => RegExp(
+    r'\b(?:gui di|gui|dong y|xac nhan|duoc|ok|oke|duoc roi)\b',
+  ).hasMatch(value);
+
+  bool _isVoiceCancellation(String value) =>
+      RegExp(r'\b(?:huy|khong gui|thoi|bo qua)\b').hasMatch(value);
 
   _HealthVoiceAction? _healthActionFor(String value) {
     final text = _normalizedText(value);

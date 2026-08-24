@@ -51,6 +51,7 @@ class _VoiceAssistantPageState extends State<VoiceAssistantPage> {
   bool _listening = false;
   bool _sending = false;
   bool _submittedCurrentSession = false;
+  double _speechConfidence = 0;
   String _transcript = '';
   String _answer = '';
   ReminderDraft? _pendingReminder;
@@ -87,6 +88,7 @@ class _VoiceAssistantPageState extends State<VoiceAssistantPage> {
       _answer = '';
       _listening = true;
       _submittedCurrentSession = false;
+      _speechConfidence = 0;
     });
     await _speech.listen(
       listenOptions: SpeechListenOptions(
@@ -97,7 +99,10 @@ class _VoiceAssistantPageState extends State<VoiceAssistantPage> {
       ),
       onResult: (result) {
         if (!mounted) return;
-        setState(() => _transcript = result.recognizedWords);
+        setState(() {
+          _transcript = result.recognizedWords;
+          if (result.finalResult) _speechConfidence = result.confidence;
+        });
         if (result.finalResult) {
           unawaited(_submitCurrentTranscript());
         }
@@ -117,7 +122,25 @@ class _VoiceAssistantPageState extends State<VoiceAssistantPage> {
     await _speech.stop();
     if (mounted) setState(() => _listening = false);
     debugPrint('DiVie voice transcript: $text');
+    if (!_isUsableVoiceTranscript(text)) {
+      debugPrint(
+        'DiVie voice transcript rejected: confidence=$_speechConfidence.',
+      );
+      await _setCallAnswer('Con chưa nghe rõ. Bác nói lại giúp con nhé.');
+      return;
+    }
     await _ask(text);
+  }
+
+  bool _isUsableVoiceTranscript(String value) {
+    final normalized = _normalizedText(value);
+    if (normalized.length < 3 || !RegExp(r'[a-z0-9]').hasMatch(normalized)) {
+      return false;
+    }
+
+    // Some Android recognition services report 0 when they do not expose a
+    // confidence score. Only reject a score when one is actually available.
+    return _speechConfidence <= 0 || _speechConfidence >= .45;
   }
 
   String _cleanAssistantText(String value) {
@@ -206,19 +229,19 @@ class _VoiceAssistantPageState extends State<VoiceAssistantPage> {
     if (error is _AssistantRequestException) {
       final status = error.statusCode;
       if (status == 401 || status == 403) {
-        return 'Trợ lý chưa được cấp quyền. Bạn thử lại sau nhé.';
+        return 'Trợ lý chưa được cấp quyền. Bác thử lại sau giúp con nhé.';
       }
       if (status == 429) {
-        return 'Trợ lý đang bận. Bạn thử lại sau ít phút nhé.';
+        return 'Trợ lý đang bận. Bác thử lại sau ít phút nhé.';
       }
       if (status != null && status >= 500) {
-        return 'Máy chủ trợ lý đang bận. Bạn thử lại sau nhé.';
+        return 'Máy chủ trợ lý đang bận. Bác thử lại sau giúp con nhé.';
       }
     }
     if (error is TimeoutException) {
-      return 'Kết nối trợ lý hơi chậm. Bạn thử lại nhé.';
+      return 'Kết nối trợ lý hơi chậm. Bác thử lại giúp con nhé.';
     }
-    return 'Chưa kết nối được trợ lý. Bạn thử lại nhé.';
+    return 'Chưa kết nối được trợ lý. Bác thử lại giúp con nhé.';
   }
 
   String _speechText(String value) => value
@@ -229,7 +252,7 @@ class _VoiceAssistantPageState extends State<VoiceAssistantPage> {
       .trim();
 
   Future<void> _speakSafely(String value) async {
-    final text = _speechText(value);
+    final text = _speechText(_enforceVoiceAddress(value));
     if (text.isEmpty) return;
     try {
       await _tts.stop();
@@ -238,6 +261,16 @@ class _VoiceAssistantPageState extends State<VoiceAssistantPage> {
       // Voice playback must not turn a successful API/reminder action into an error.
     }
   }
+
+  String _enforceVoiceAddress(String value) => value
+      .replaceAll('Mình', 'Con')
+      .replaceAll('mình', 'con')
+      .replaceAll('Tôi', 'Con')
+      .replaceAll('tôi', 'con')
+      .replaceAll('Bạn', 'Bác')
+      .replaceAll('bạn', 'bác')
+      .replaceAll('Ông/bà', 'Bác')
+      .replaceAll('ông/bà', 'bác');
 
   Future<void> _ask(String text) async {
     setState(() => _sending = true);
@@ -250,7 +283,7 @@ class _VoiceAssistantPageState extends State<VoiceAssistantPage> {
       if (_looksLikeCallIntent(text)) {
         debugPrint('DiVie voice call intent had no usable contact name.');
         await _setCallAnswer(
-          'Mình chưa nghe rõ tên người cần gọi. Bạn nói lại tên đúng như trong danh bạ nhé.',
+          'Con chưa nghe rõ tên người cần gọi. Bác nói lại tên đúng như trong danh bạ nhé.',
         );
         return;
       }
@@ -264,7 +297,7 @@ class _VoiceAssistantPageState extends State<VoiceAssistantPage> {
       if (draft.isReminderIntent) {
         if (draft.time == null) {
           _pendingReminder = draft;
-          const answer = 'Bạn muốn nhắc lúc mấy giờ?';
+          const answer = 'Bác muốn con nhắc lúc mấy giờ ạ?';
           if (mounted) setState(() => _answer = answer);
           await _speakSafely(answer);
           return;
@@ -297,8 +330,8 @@ class _VoiceAssistantPageState extends State<VoiceAssistantPage> {
           final notificationReady = await NotificationService.instance
               .trySchedule(created);
           final answer = notificationReady
-              ? 'Đã tạo nhắc thuốc “${created.name}” lúc ${created.time} mỗi ngày.'
-              : 'Đã lưu nhắc thuốc “${created.name}” lúc ${created.time}. Máy chưa bật được thông báo, bạn kiểm tra quyền thông báo trong Cài đặt nhé.';
+              ? 'Con đã tạo nhắc thuốc “${created.name}” lúc ${created.time} mỗi ngày.'
+              : 'Con đã lưu nhắc thuốc “${created.name}” lúc ${created.time}. Máy chưa bật được thông báo, bác kiểm tra quyền thông báo trong Cài đặt nhé.';
           if (mounted) setState(() => _answer = answer);
           await _speakSafely(answer);
         } catch (error, stackTrace) {
@@ -306,8 +339,8 @@ class _VoiceAssistantPageState extends State<VoiceAssistantPage> {
           debugPrintStack(stackTrace: stackTrace);
           final answer =
               error.toString().contains('medicine_reminders_remote_unavailable')
-              ? 'Ứng dụng chưa kết nối tài khoản. Bạn đăng nhập lại rồi thử tạo lịch nhé.'
-              : 'Chưa lưu được lịch nhắc thuốc. Bạn thử lại nhé.';
+              ? 'Ứng dụng chưa kết nối tài khoản. Bác đăng nhập lại rồi thử tạo lịch nhé.'
+              : 'Con chưa lưu được lịch nhắc thuốc. Bác thử lại nhé.';
           if (mounted) setState(() => _answer = answer);
           await _speakSafely(answer);
         }
@@ -328,7 +361,7 @@ class _VoiceAssistantPageState extends State<VoiceAssistantPage> {
         {
           'role': 'system',
           'content':
-              'Bạn là trợ lý DiVie cho người cao tuổi. Trả lời tiếng Việt ngắn, rõ, an toàn. Với yêu cầu nhắc thuốc, nếu người dùng chưa nói rõ giờ thì chỉ hỏi giờ cần nhắc; không nói rằng ứng dụng không thể tạo lịch. Không tự nhận đã mở camera hoặc biểu đồ sức khỏe khi chưa có xác nhận từ ứng dụng. Nếu cần làm rõ một việc khác, chỉ hỏi một câu ngắn.',
+              'Bạn là trợ lý DiVie cho người cao tuổi. Luôn xưng “con” và gọi người dùng là “bác”, không dùng mình, tôi, bạn, ông/bà hay bất kỳ cách xưng hô nào khác. Trả lời tiếng Việt ngắn, rõ, an toàn. Nếu câu nói của bác không rõ hoặc có vẻ bị nhận diện sai, chỉ nói: “Con chưa nghe rõ. Bác nói lại giúp con nhé.” Với yêu cầu nhắc thuốc, nếu người dùng chưa nói rõ giờ thì chỉ hỏi giờ cần nhắc; không nói rằng ứng dụng không thể tạo lịch. Không tự nhận đã mở camera hoặc biểu đồ sức khỏe khi chưa có xác nhận từ ứng dụng. Nếu cần làm rõ một việc khác, chỉ hỏi một câu ngắn.',
         },
         ...history,
         {'role': 'user', 'content': text},
@@ -363,7 +396,7 @@ class _VoiceAssistantPageState extends State<VoiceAssistantPage> {
       }
       if (_looksLikeReminderConfirmation(answer)) {
         const safeAnswer =
-            'Mình chưa ghi được lịch nhắc thuốc. Bạn nói lại: “Nhắc tôi uống thuốc lúc 16 giờ.”';
+            'Con chưa ghi được lịch nhắc thuốc. Bác nói lại: “Nhắc con uống thuốc lúc 16 giờ.”';
         if (mounted) setState(() => _answer = safeAnswer);
         await _speakSafely(safeAnswer);
         return;
@@ -434,7 +467,7 @@ class _VoiceAssistantPageState extends State<VoiceAssistantPage> {
       if (!permitted) {
         debugPrint('DiVie voice call lookup: contacts permission denied.');
         await _setCallAnswer(
-          'DiVie cần được cho phép đọc danh bạ để tìm “$target”.',
+          'Con cần được cho phép đọc danh bạ để tìm “$target”.',
         );
         return;
       }
@@ -456,7 +489,7 @@ class _VoiceAssistantPageState extends State<VoiceAssistantPage> {
       );
       if (matches.isEmpty) {
         await _setCallAnswer(
-          'Mình chưa tìm thấy “$target” trong danh bạ điện thoại nên chưa thể mở cuộc gọi.',
+          'Con chưa tìm thấy “$target” trong danh bạ điện thoại nên chưa thể mở cuộc gọi.',
         );
         return;
       }
@@ -467,7 +500,7 @@ class _VoiceAssistantPageState extends State<VoiceAssistantPage> {
       final candidates = exactMatches.isNotEmpty ? exactMatches : matches;
       if (candidates.length > 1) {
         await _setCallAnswer(
-          'Mình tìm thấy nhiều người tên “$target”. Bạn hãy đặt tên rõ hơn trong danh bạ rồi thử lại nhé.',
+          'Con tìm thấy nhiều người tên “$target”. Bác hãy đặt tên rõ hơn trong danh bạ rồi thử lại nhé.',
         );
         return;
       }
@@ -481,12 +514,12 @@ class _VoiceAssistantPageState extends State<VoiceAssistantPage> {
           'DiVie voice call lookup: matched contact has no phone number.',
         );
         await _setCallAnswer(
-          'Mình đã tìm thấy ${contact.displayName}, nhưng danh bạ chưa có số điện thoại.',
+          'Con đã tìm thấy ${contact.displayName}, nhưng danh bạ chưa có số điện thoại.',
         );
         return;
       }
 
-      final answer = 'Mình mở cuộc gọi đến ${contact.displayName} nhé.';
+      final answer = 'Con mở cuộc gọi đến ${contact.displayName} nhé.';
       if (mounted) setState(() => _answer = answer);
       unawaited(_speakSafely(answer));
       await EmergencyService.callNumber(phone);
@@ -495,7 +528,7 @@ class _VoiceAssistantPageState extends State<VoiceAssistantPage> {
       debugPrint('DiVie voice call lookup failed: $error');
       debugPrintStack(stackTrace: stackTrace);
       await _setCallAnswer(
-        'Chưa mở được cuộc gọi. Bạn kiểm tra lại danh bạ rồi thử lại nhé.',
+        'Con chưa mở được cuộc gọi. Bác kiểm tra lại danh bạ rồi thử lại nhé.',
       );
     }
   }
@@ -521,8 +554,8 @@ class _VoiceAssistantPageState extends State<VoiceAssistantPage> {
   Future<void> _openHealthAction(_HealthVoiceAction action) async {
     final navigator = Navigator.of(context, rootNavigator: true);
     final answer = action == _HealthVoiceAction.capture
-        ? 'Mình mở camera để chụp máy đo huyết áp nhé.'
-        : 'Mình mở biểu đồ sức khỏe cho bạn nhé.';
+        ? 'Con mở camera để chụp máy đo huyết áp nhé.'
+        : 'Con mở biểu đồ sức khỏe cho bác nhé.';
     if (mounted) setState(() => _answer = answer);
     await _speakSafely(answer);
     if (widget.embedded) await navigator.maybePop();
@@ -580,12 +613,12 @@ class _VoiceAssistantPageState extends State<VoiceAssistantPage> {
           ),
           const SizedBox(height: 8),
           const Text(
-            'Ví dụ: “Nhắc tôi uống thuốc lúc 4 giờ chiều”.',
+            'Ví dụ: “Nhắc con uống thuốc lúc 4 giờ chiều”.',
             style: TextStyle(color: DivieColors.muted, fontSize: 16),
           ),
           const SizedBox(height: 22),
           _VoiceBubble(
-            label: 'Bạn nói',
+            label: 'Bác nói',
             text: _transcript.isEmpty
                 ? 'Chạm micro rồi nói điều bạn cần'
                 : _transcript,

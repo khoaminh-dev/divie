@@ -325,7 +325,9 @@ class _DivieShellState extends State<DivieShell> {
       case 1:
         return const _MessagesPage();
       case 3:
-        return const _ContactsPage();
+        return widget.role == AppRole.family
+            ? const EmergencyContactsPage()
+            : const _ContactsPage();
       case 4:
         return _SettingsPage(
           role: widget.role,
@@ -450,7 +452,11 @@ class _FamilyDashboardPageState extends State<_FamilyDashboardPage> {
             ],
           ),
           const SizedBox(height: 24),
-          _FamilyTodayBand(summary: summary, loading: _loading),
+          _FamilyTodayBand(
+            summary: summary,
+            loading: _loading,
+            onTap: _openHealth,
+          ),
           const SizedBox(height: 22),
           const Text(
             'Việc cần làm',
@@ -492,10 +498,14 @@ class _FamilyDashboardPageState extends State<_FamilyDashboardPage> {
               ),
               _FamilyActionTile(
                 icon: Icons.contact_phone_outlined,
-                title: 'Liên hệ',
-                subtitle: 'Danh bạ thân thiết',
+                title: 'Liên hệ khẩn cấp',
+                subtitle: 'Số người thân ưu tiên',
                 color: const Color(0xFFB45D3B),
-                onTap: () => widget.onNavigate(3),
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => const EmergencyContactsPage(),
+                  ),
+                ),
               ),
             ],
           ),
@@ -509,7 +519,12 @@ class _FamilyDashboardPageState extends State<_FamilyDashboardPage> {
             ),
           ),
           const SizedBox(height: 12),
-          _FamilyAttention(summary: summary, loading: _loading),
+          _FamilyAttention(
+            summary: summary,
+            loading: _loading,
+            onOpenHealth: _openHealth,
+            onOpenReminders: _openReminders,
+          ),
         ],
       ),
     );
@@ -531,10 +546,15 @@ class _FamilyCareSummary {
 }
 
 class _FamilyTodayBand extends StatelessWidget {
-  const _FamilyTodayBand({required this.summary, required this.loading});
+  const _FamilyTodayBand({
+    required this.summary,
+    required this.loading,
+    required this.onTap,
+  });
 
   final _FamilyCareSummary? summary;
   final bool loading;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
@@ -555,74 +575,78 @@ class _FamilyTodayBand extends StatelessWidget {
     final measuredAt = measurement == null
         ? 'Chưa ghi nhận lần đo gần đây'
         : 'Cập nhật ${_shortDateTime(measurement.measuredAt)}';
-    return Container(
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: DivieColors.navy,
+    return Material(
+      color: DivieColors.navy,
+      borderRadius: BorderRadius.circular(8),
+      child: InkWell(
+        onTap: onTap,
         borderRadius: BorderRadius.circular(8),
-      ),
-      child: Row(
-        children: [
-          const Icon(
-            Icons.favorite_rounded,
-            color: Color(0xFF7FE2E3),
-            size: 34,
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Tình hình hôm nay',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-                const SizedBox(height: 5),
-                Text(
-                  '$pressure mmHg',
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 24,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-                const SizedBox(height: 3),
-                Text(
-                  measuredAt,
-                  style: const TextStyle(
-                    color: Color(0xFFC9DBE7),
-                    fontSize: 13,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(width: 10),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.end,
+        child: Padding(
+          padding: const EdgeInsets.all(18),
+          child: Row(
             children: [
-              const Text(
-                'Thuốc',
-                style: TextStyle(color: Color(0xFFC9DBE7), fontSize: 13),
+              const Icon(
+                Icons.favorite_rounded,
+                color: Color(0xFF7FE2E3),
+                size: 34,
               ),
-              Text(
-                '${data?.takenToday ?? 0}/${data?.activeReminders ?? 0}',
-                style: const TextStyle(
-                  color: Color(0xFF7FE2E3),
-                  fontSize: 22,
-                  fontWeight: FontWeight.w900,
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Tình hình hôm nay',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 5),
+                    Text(
+                      '$pressure mmHg',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 24,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      measuredAt,
+                      style: const TextStyle(
+                        color: Color(0xFFC9DBE7),
+                        fontSize: 13,
+                      ),
+                    ),
+                  ],
                 ),
               ),
-              const Text(
-                'đã xác nhận',
-                style: TextStyle(color: Color(0xFFC9DBE7), fontSize: 11),
+              const SizedBox(width: 10),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  const Text(
+                    'Thuốc',
+                    style: TextStyle(color: Color(0xFFC9DBE7), fontSize: 13),
+                  ),
+                  Text(
+                    '${data?.takenToday ?? 0}/${data?.activeReminders ?? 0}',
+                    style: const TextStyle(
+                      color: Color(0xFF7FE2E3),
+                      fontSize: 22,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  const Text(
+                    'đã xác nhận',
+                    style: TextStyle(color: Color(0xFFC9DBE7), fontSize: 11),
+                  ),
+                ],
               ),
             ],
           ),
-        ],
+        ),
       ),
     );
   }
@@ -681,10 +705,17 @@ class _FamilyActionTile extends StatelessWidget {
 }
 
 class _FamilyAttention extends StatelessWidget {
-  const _FamilyAttention({required this.summary, required this.loading});
+  const _FamilyAttention({
+    required this.summary,
+    required this.loading,
+    required this.onOpenHealth,
+    required this.onOpenReminders,
+  });
 
   final _FamilyCareSummary? summary;
   final bool loading;
+  final VoidCallback onOpenHealth;
+  final VoidCallback onOpenReminders;
 
   @override
   Widget build(BuildContext context) {
@@ -697,7 +728,16 @@ class _FamilyAttention extends StatelessWidget {
     final low =
         (measurement?.systolic != null && measurement!.systolic! < 90) ||
         (measurement?.diastolic != null && measurement!.diastolic! < 60);
-    final items = <({IconData icon, Color color, String title, String text})>[];
+    final items =
+        <
+          ({
+            IconData icon,
+            Color color,
+            String title,
+            String text,
+            VoidCallback onTap,
+          })
+        >[];
     if (high || low) {
       items.add((
         icon: Icons.monitor_heart_outlined,
@@ -705,6 +745,7 @@ class _FamilyAttention extends StatelessWidget {
         title: 'Chỉ số cần theo dõi lại',
         text:
             'Lần đo gần nhất là ${measurement!.systolic}/${measurement.diastolic} mmHg. Nên đo lại khi đã nghỉ ngơi.',
+        onTap: onOpenHealth,
       ));
     }
     if ((data?.skippedToday ?? 0) > 0) {
@@ -713,6 +754,7 @@ class _FamilyAttention extends StatelessWidget {
         color: const Color(0xFFB45D3B),
         title: '${data!.skippedToday} lịch thuốc đã bỏ qua',
         text: 'Mở Quản lý thuốc để xem lại và hỗ trợ người thân.',
+        onTap: onOpenReminders,
       ));
     }
     if (items.isEmpty) {
@@ -722,48 +764,56 @@ class _FamilyAttention extends StatelessWidget {
         title: 'Chưa có việc cần chú ý',
         text:
             'DiVie sẽ hiển thị ở đây khi có chỉ số hoặc lịch thuốc cần theo dõi.',
+        onTap: onOpenHealth,
       ));
     }
     return Column(
       children: [
         for (final item in items) ...[
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: Colors.white,
+          Material(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(8),
+            child: InkWell(
+              onTap: item.onTap,
               borderRadius: BorderRadius.circular(8),
-              border: Border(left: BorderSide(color: item.color, width: 4)),
-            ),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Icon(item.icon, color: item.color, size: 24),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        item.title,
-                        style: const TextStyle(
-                          color: DivieColors.navy,
-                          fontWeight: FontWeight.w900,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        item.text,
-                        style: const TextStyle(
-                          color: DivieColors.muted,
-                          fontSize: 13,
-                          height: 1.35,
-                        ),
-                      ),
-                    ],
-                  ),
+              child: Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border(left: BorderSide(color: item.color, width: 4)),
                 ),
-              ],
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(item.icon, color: item.color, size: 24),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            item.title,
+                            style: const TextStyle(
+                              color: DivieColors.navy,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            item.text,
+                            style: const TextStyle(
+                              color: DivieColors.muted,
+                              fontSize: 13,
+                              height: 1.35,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             ),
           ),
           const SizedBox(height: 10),

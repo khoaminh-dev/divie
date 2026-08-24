@@ -712,7 +712,10 @@ class _VoiceAssistantPageState extends State<VoiceAssistantPage> {
       final roomId = await service.createOrGetDirectChat(recipient.id);
       await service.sendMessage(roomId, content);
       _pendingMessage = null;
-      await _setCallAnswer('Con đã gửi tin cho ${recipient.name} rồi ạ.');
+      await _setCallAnswer(
+        'Con đã gửi tin cho ${recipient.name} rồi ạ. Con mở cuộc trò chuyện cho bác nhé.',
+      );
+      await _openMessageThread(recipient);
     } catch (error) {
       debugPrint('DiVie voice message send failed: $error');
       await _setCallAnswer('Con chưa gửi được tin. Bác thử lại giúp con nhé.');
@@ -732,6 +735,20 @@ class _VoiceAssistantPageState extends State<VoiceAssistantPage> {
 
   bool _isVoiceCancellation(String value) =>
       RegExp(r'\b(?:huy|khong gui|thoi|bo qua)\b').hasMatch(value);
+
+  Future<void> _openMessageThread(ContactRecord recipient) async {
+    final navigator = Navigator.of(context, rootNavigator: true);
+    if (widget.embedded) await navigator.maybePop();
+    await Future<void>.delayed(const Duration(milliseconds: 180));
+    await navigator.push(
+      MaterialPageRoute(
+        builder: (_) => LiveMessagesPage(
+          initialRecipientId: recipient.id,
+          initialRecipientName: recipient.name,
+        ),
+      ),
+    );
+  }
 
   _HealthVoiceAction? _healthActionFor(String value) {
     final text = _normalizedText(value);

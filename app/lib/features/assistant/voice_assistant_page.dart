@@ -71,7 +71,9 @@ class _VoiceAssistantPageState extends State<VoiceAssistantPage> {
     final ready = await _speech.initialize();
     await _tts.setLanguage('vi-VN');
     await _tts.setSpeechRate(.48);
-    if (mounted) setState(() => _ready = ready);
+    if (!mounted) return;
+    setState(() => _ready = ready);
+    if (ready && widget.embedded) unawaited(_toggleListening());
   }
 
   Future<void> _toggleListening() async {
@@ -610,192 +612,23 @@ class _VoiceAssistantPageState extends State<VoiceAssistantPage> {
   }
 
   Widget _buildFloatingAssistant(BuildContext context) {
-    final status = !_ready
-        ? 'Đang chuẩn bị micro…'
-        : _sending
-        ? 'DiVie đang xử lý yêu cầu của bạn'
-        : _listening
-        ? 'DiVie đang lắng nghe…'
-        : 'Chạm vào micro và nói điều bạn cần';
-    final hasResult = _transcript.isNotEmpty || _answer.isNotEmpty;
-
-    return SingleChildScrollView(
-      padding: EdgeInsets.fromLTRB(
-        22,
-        18,
-        22,
-        22 + MediaQuery.viewInsetsOf(context).bottom,
-      ),
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 34),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Row(
-            children: [
-              Container(
-                width: 42,
-                height: 42,
-                decoration: const BoxDecoration(
-                  color: Color(0x1A18AAB3),
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(
-                  Icons.auto_awesome_rounded,
-                  color: DivieColors.teal,
-                ),
-              ),
-              const SizedBox(width: 12),
-              const Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Trợ lý DiVie',
-                      style: TextStyle(
-                        color: DivieColors.navy,
-                        fontSize: 20,
-                        fontWeight: FontWeight.w900,
-                      ),
-                    ),
-                    SizedBox(height: 2),
-                    Text(
-                      'Nói tự nhiên, DiVie sẽ hỗ trợ ngay',
-                      style: TextStyle(color: DivieColors.muted, fontSize: 13),
-                    ),
-                  ],
-                ),
-              ),
-              IconButton(
-                tooltip: 'Đóng trợ lý',
-                onPressed: () => Navigator.of(context).pop(),
-                icon: const Icon(Icons.close_rounded, color: DivieColors.navy),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
           _VoiceWave(listening: _listening, processing: _sending),
-          const SizedBox(height: 10),
-          Text(
-            status,
-            textAlign: TextAlign.center,
-            style: const TextStyle(
-              color: DivieColors.navy,
-              fontSize: 16,
-              fontWeight: FontWeight.w800,
-            ),
-          ),
-          const SizedBox(height: 4),
-          const Text(
-            'Ví dụ: “Nhắc tôi uống thuốc lúc 4 giờ chiều”.',
-            textAlign: TextAlign.center,
-            style: TextStyle(color: DivieColors.muted, fontSize: 14),
-          ),
-          const SizedBox(height: 16),
-          Center(
-            child: FloatingActionButton.large(
-              heroTag: 'assistant-floating-mic',
-              backgroundColor: _listening
-                  ? DivieColors.danger
-                  : DivieColors.teal,
-              onPressed: _sending ? null : _toggleListening,
-              child: Icon(
-                _listening ? Icons.stop_rounded : Icons.mic_rounded,
-                color: Colors.white,
-                size: 38,
-              ),
-            ),
-          ),
-          if (hasResult) ...[
-            const SizedBox(height: 18),
-            if (_transcript.isNotEmpty)
-              _AssistantResultCard(
-                icon: Icons.record_voice_over_rounded,
-                label: 'Bạn vừa nói',
-                text: _transcript,
-              ),
-            if (_transcript.isNotEmpty && _answer.isNotEmpty)
-              const SizedBox(height: 10),
-            if (_answer.isNotEmpty)
-              _AssistantResultCard(
-                icon: Icons.auto_awesome_rounded,
-                label: 'DiVie đã xử lý',
-                text: _answer,
-                emphasized: true,
-              ),
-          ],
-          const SizedBox(height: 8),
-          TextButton.icon(
-            onPressed: () {
-              Navigator.of(context).pop();
-              Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const VoiceAssistantPage()),
-              );
-            },
-            icon: const Icon(Icons.history_rounded),
-            label: const Text('Mở trợ lý đầy đủ'),
+          const SizedBox(height: 26),
+          FloatingActionButton.large(
+            heroTag: 'assistant-floating-mic',
+            backgroundColor: _listening ? DivieColors.danger : DivieColors.teal,
+            onPressed: _sending ? null : _toggleListening,
+            child: const Icon(Icons.mic_rounded, color: Colors.white, size: 38),
           ),
         ],
       ),
     );
   }
-}
-
-class _AssistantResultCard extends StatelessWidget {
-  const _AssistantResultCard({
-    required this.icon,
-    required this.label,
-    required this.text,
-    this.emphasized = false,
-  });
-
-  final IconData icon;
-  final String label;
-  final String text;
-  final bool emphasized;
-
-  @override
-  Widget build(BuildContext context) => Container(
-    width: double.infinity,
-    padding: const EdgeInsets.all(14),
-    decoration: BoxDecoration(
-      color: emphasized ? const Color(0xFFE2F8F7) : Colors.white,
-      borderRadius: BorderRadius.circular(18),
-      border: Border.all(
-        color: emphasized ? const Color(0x6618AAB3) : const Color(0xFFE4ECF1),
-      ),
-    ),
-    child: Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Icon(icon, color: DivieColors.teal, size: 20),
-        const SizedBox(width: 10),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                label,
-                style: const TextStyle(
-                  color: DivieColors.teal,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w900,
-                ),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                text,
-                style: const TextStyle(
-                  color: DivieColors.navy,
-                  fontSize: 15,
-                  height: 1.3,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ],
-    ),
-  );
 }
 
 class _VoiceWave extends StatefulWidget {

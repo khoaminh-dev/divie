@@ -8,6 +8,10 @@ import 'reminder_model.dart';
 class NotificationService {
   NotificationService._();
 
+  static const _channelId = 'medicine_reminders_alarm_v2';
+  static const _channelName = 'Nhắc thuốc';
+  static const _channelDescription = 'Thông báo nhắc uống thuốc có chuông';
+
   static final instance = NotificationService._();
   final _plugin = FlutterLocalNotificationsPlugin();
   Future<void>? _initialization;
@@ -32,10 +36,11 @@ class NotificationService {
     await androidPlugin?.requestNotificationsPermission();
     await androidPlugin?.createNotificationChannel(
       const AndroidNotificationChannel(
-        'medicine_reminders',
-        'Nhắc thuốc',
-        description: 'Thông báo nhắc uống thuốc',
+        _channelId,
+        _channelName,
+        description: _channelDescription,
         importance: Importance.max,
+        audioAttributesUsage: AudioAttributesUsage.alarm,
       ),
     );
   }
@@ -84,11 +89,13 @@ class NotificationService {
       next,
       const NotificationDetails(
         android: AndroidNotificationDetails(
-          'medicine_reminders',
-          'Nhắc thuốc',
-          channelDescription: 'Thông báo nhắc uống thuốc',
+          _channelId,
+          _channelName,
+          channelDescription: _channelDescription,
           importance: Importance.max,
           priority: Priority.high,
+          category: AndroidNotificationCategory.alarm,
+          audioAttributesUsage: AudioAttributesUsage.alarm,
         ),
         iOS: DarwinNotificationDetails(),
       ),
@@ -121,11 +128,13 @@ class NotificationService {
         'Đây là thông báo kiểm tra trên điện thoại này.',
         const NotificationDetails(
           android: AndroidNotificationDetails(
-            'medicine_reminders',
-            'Nhắc thuốc',
-            channelDescription: 'Thông báo nhắc uống thuốc',
+            _channelId,
+            _channelName,
+            channelDescription: _channelDescription,
             importance: Importance.max,
             priority: Priority.high,
+            category: AndroidNotificationCategory.alarm,
+            audioAttributesUsage: AudioAttributesUsage.alarm,
           ),
           iOS: DarwinNotificationDetails(),
         ),

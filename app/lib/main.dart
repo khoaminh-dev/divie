@@ -12,6 +12,7 @@ import 'features/health/health_insights_page.dart';
 import 'features/reminders/notification_service.dart';
 import 'features/reminders/reminders_page.dart';
 import 'core/data/reminder_data_service.dart';
+import 'core/data/health_measurement_data_service.dart';
 import 'core/device/emergency_service.dart';
 import 'core/data/device_registration_service.dart';
 import 'core/data/account_profile_service.dart';
@@ -311,6 +312,7 @@ class _DivieShellState extends State<DivieShell> {
         top: false,
         minimum: const EdgeInsets.fromLTRB(28, 0, 28, 16),
         child: _BottomNavigation(
+          role: widget.role,
           selectedIndex: _selectedIndex,
           onSelected: _select,
         ),
@@ -330,10 +332,449 @@ class _DivieShellState extends State<DivieShell> {
           onRoleChanged: widget.onRoleChanged,
         );
       default:
-        return _HomePage(role: widget.role, onNavigate: _select);
+        return widget.role == AppRole.family
+            ? _FamilyDashboardPage(onNavigate: _select)
+            : _HomePage(role: widget.role, onNavigate: _select);
     }
   }
 }
+
+class _FamilyDashboardPage extends StatefulWidget {
+  const _FamilyDashboardPage({required this.onNavigate});
+
+  final ValueChanged<int> onNavigate;
+
+  @override
+  State<_FamilyDashboardPage> createState() => _FamilyDashboardPageState();
+}
+
+class _FamilyDashboardPageState extends State<_FamilyDashboardPage> {
+  _FamilyCareSummary? _summary;
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_load());
+  }
+
+  Future<void> _load() async {
+    setState(() => _loading = true);
+    try {
+      final client = SupabaseBootstrap.enabled
+          ? Supabase.instance.client
+          : null;
+      final reminderService = ReminderDataService(client: client);
+      final healthService = HealthMeasurementDataService(client: client);
+      final reminders = await reminderService.load();
+      final statuses = await reminderService.loadStatuses(DateTime.now());
+      final measurements = await healthService.load(limit: 1);
+      if (!mounted) return;
+      final activeReminders = reminders.where((item) => item.enabled).toList();
+      setState(() {
+        _summary = _FamilyCareSummary(
+          activeReminders: activeReminders.length,
+          takenToday: activeReminders
+              .where((item) => statuses[item.id] == 'taken')
+              .length,
+          skippedToday: activeReminders
+              .where((item) => statuses[item.id] == 'skipped')
+              .length,
+          latestMeasurement: measurements.isEmpty ? null : measurements.first,
+        );
+        _loading = false;
+      });
+    } catch (error, stackTrace) {
+      debugPrint('DiVie family dashboard load failed: $error');
+      debugPrintStack(stackTrace: stackTrace);
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  void _openHealth() {
+    Navigator.of(
+      context,
+    ).push(MaterialPageRoute(builder: (_) => const HealthInsightsPage()));
+  }
+
+  void _openReminders() {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => const RemindersPage(role: AppRole.family),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final summary = _summary;
+    return RefreshIndicator(
+      onRefresh: _load,
+      child: ListView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.fromLTRB(22, 22, 22, 34),
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Chăm sóc người thân',
+                      style: TextStyle(
+                        color: DivieColors.navy,
+                        fontSize: 28,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    SizedBox(height: 5),
+                    Text(
+                      'Theo dõi và hỗ trợ trên tài khoản chung',
+                      style: TextStyle(
+                        color: DivieColors.muted,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              IconButton(
+                tooltip: 'Làm mới',
+                onPressed: _loading ? null : _load,
+                icon: const Icon(Icons.refresh_rounded),
+                color: DivieColors.teal,
+              ),
+            ],
+          ),
+          const SizedBox(height: 24),
+          _FamilyTodayBand(summary: summary, loading: _loading),
+          const SizedBox(height: 22),
+          const Text(
+            'Việc cần làm',
+            style: TextStyle(
+              color: DivieColors.navy,
+              fontSize: 20,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          const SizedBox(height: 12),
+          GridView.count(
+            crossAxisCount: 2,
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            crossAxisSpacing: 12,
+            mainAxisSpacing: 12,
+            childAspectRatio: 1.22,
+            children: [
+              _FamilyActionTile(
+                icon: Icons.monitor_heart_outlined,
+                title: 'Theo dõi sức khỏe',
+                subtitle: 'Chỉ số và xu hướng',
+                color: DivieColors.teal,
+                onTap: _openHealth,
+              ),
+              _FamilyActionTile(
+                icon: Icons.medication_outlined,
+                title: 'Quản lý thuốc',
+                subtitle: 'Lịch và xác nhận',
+                color: const Color(0xFF3777C8),
+                onTap: _openReminders,
+              ),
+              _FamilyActionTile(
+                icon: Icons.chat_bubble_outline_rounded,
+                title: 'Tin nhắn',
+                subtitle: 'Trao đổi nhanh',
+                color: const Color(0xFF8B5EAF),
+                onTap: () => widget.onNavigate(1),
+              ),
+              _FamilyActionTile(
+                icon: Icons.contact_phone_outlined,
+                title: 'Liên hệ',
+                subtitle: 'Danh bạ thân thiết',
+                color: const Color(0xFFB45D3B),
+                onTap: () => widget.onNavigate(3),
+              ),
+            ],
+          ),
+          const SizedBox(height: 24),
+          const Text(
+            'Cần chú ý',
+            style: TextStyle(
+              color: DivieColors.navy,
+              fontSize: 20,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          const SizedBox(height: 12),
+          _FamilyAttention(summary: summary, loading: _loading),
+        ],
+      ),
+    );
+  }
+}
+
+class _FamilyCareSummary {
+  const _FamilyCareSummary({
+    required this.activeReminders,
+    required this.takenToday,
+    required this.skippedToday,
+    required this.latestMeasurement,
+  });
+
+  final int activeReminders;
+  final int takenToday;
+  final int skippedToday;
+  final HealthMeasurementHistoryItem? latestMeasurement;
+}
+
+class _FamilyTodayBand extends StatelessWidget {
+  const _FamilyTodayBand({required this.summary, required this.loading});
+
+  final _FamilyCareSummary? summary;
+  final bool loading;
+
+  @override
+  Widget build(BuildContext context) {
+    if (loading) {
+      return const SizedBox(
+        height: 134,
+        child: Center(
+          child: CircularProgressIndicator(color: DivieColors.teal),
+        ),
+      );
+    }
+    final data = summary;
+    final measurement = data?.latestMeasurement;
+    final pressure =
+        measurement?.systolic != null && measurement?.diastolic != null
+        ? '${measurement!.systolic}/${measurement.diastolic}'
+        : 'Chưa có số đo';
+    final measuredAt = measurement == null
+        ? 'Chưa ghi nhận lần đo gần đây'
+        : 'Cập nhật ${_shortDateTime(measurement.measuredAt)}';
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: DivieColors.navy,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        children: [
+          const Icon(
+            Icons.favorite_rounded,
+            color: Color(0xFF7FE2E3),
+            size: 34,
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Tình hình hôm nay',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 5),
+                Text(
+                  '$pressure mmHg',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 24,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  measuredAt,
+                  style: const TextStyle(
+                    color: Color(0xFFC9DBE7),
+                    fontSize: 13,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 10),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              const Text(
+                'Thuốc',
+                style: TextStyle(color: Color(0xFFC9DBE7), fontSize: 13),
+              ),
+              Text(
+                '${data?.takenToday ?? 0}/${data?.activeReminders ?? 0}',
+                style: const TextStyle(
+                  color: Color(0xFF7FE2E3),
+                  fontSize: 22,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              const Text(
+                'đã xác nhận',
+                style: TextStyle(color: Color(0xFFC9DBE7), fontSize: 11),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _FamilyActionTile extends StatelessWidget {
+  const _FamilyActionTile({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.color,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final Color color;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) => Material(
+    color: Colors.white,
+    borderRadius: BorderRadius.circular(8),
+    child: InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(8),
+      child: Padding(
+        padding: const EdgeInsets.all(15),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(icon, color: color, size: 27),
+            const Spacer(),
+            Text(
+              title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: DivieColors.navy,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+            const SizedBox(height: 3),
+            Text(
+              subtitle,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(color: DivieColors.muted, fontSize: 12),
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
+}
+
+class _FamilyAttention extends StatelessWidget {
+  const _FamilyAttention({required this.summary, required this.loading});
+
+  final _FamilyCareSummary? summary;
+  final bool loading;
+
+  @override
+  Widget build(BuildContext context) {
+    if (loading) return const SizedBox.shrink();
+    final data = summary;
+    final measurement = data?.latestMeasurement;
+    final high =
+        (measurement?.systolic ?? 0) >= 140 ||
+        (measurement?.diastolic ?? 0) >= 90;
+    final low =
+        (measurement?.systolic != null && measurement!.systolic! < 90) ||
+        (measurement?.diastolic != null && measurement!.diastolic! < 60);
+    final items = <({IconData icon, Color color, String title, String text})>[];
+    if (high || low) {
+      items.add((
+        icon: Icons.monitor_heart_outlined,
+        color: high ? const Color(0xFFD97706) : const Color(0xFF3777C8),
+        title: 'Chỉ số cần theo dõi lại',
+        text:
+            'Lần đo gần nhất là ${measurement!.systolic}/${measurement.diastolic} mmHg. Nên đo lại khi đã nghỉ ngơi.',
+      ));
+    }
+    if ((data?.skippedToday ?? 0) > 0) {
+      items.add((
+        icon: Icons.medication_outlined,
+        color: const Color(0xFFB45D3B),
+        title: '${data!.skippedToday} lịch thuốc đã bỏ qua',
+        text: 'Mở Quản lý thuốc để xem lại và hỗ trợ người thân.',
+      ));
+    }
+    if (items.isEmpty) {
+      items.add((
+        icon: Icons.check_circle_outline_rounded,
+        color: const Color(0xFF198754),
+        title: 'Chưa có việc cần chú ý',
+        text:
+            'DiVie sẽ hiển thị ở đây khi có chỉ số hoặc lịch thuốc cần theo dõi.',
+      ));
+    }
+    return Column(
+      children: [
+        for (final item in items) ...[
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(8),
+              border: Border(left: BorderSide(color: item.color, width: 4)),
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(item.icon, color: item.color, size: 24),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        item.title,
+                        style: const TextStyle(
+                          color: DivieColors.navy,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        item.text,
+                        style: const TextStyle(
+                          color: DivieColors.muted,
+                          fontSize: 13,
+                          height: 1.35,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 10),
+        ],
+      ],
+    );
+  }
+}
+
+String _shortDateTime(DateTime value) =>
+    '${value.day.toString().padLeft(2, '0')}/${value.month.toString().padLeft(2, '0')} ${value.hour.toString().padLeft(2, '0')}:${value.minute.toString().padLeft(2, '0')}';
 
 class _HomePage extends StatelessWidget {
   const _HomePage({required this.role, required this.onNavigate});
@@ -894,10 +1335,12 @@ class _Feature {
 
 class _BottomNavigation extends StatelessWidget {
   const _BottomNavigation({
+    required this.role,
     required this.selectedIndex,
     required this.onSelected,
   });
 
+  final AppRole role;
   final int selectedIndex;
   final ValueChanged<int> onSelected;
 
@@ -913,7 +1356,14 @@ class _BottomNavigation extends StatelessWidget {
       ),
       child: Row(
         children: [
-          _NavItem(Icons.home_rounded, 0, selectedIndex, onSelected),
+          _NavItem(
+            role == AppRole.family
+                ? Icons.space_dashboard_rounded
+                : Icons.home_rounded,
+            0,
+            selectedIndex,
+            onSelected,
+          ),
           _NavItem(Icons.chat_bubble_rounded, 1, selectedIndex, onSelected),
           Expanded(
             child: Center(
@@ -942,8 +1392,22 @@ class _BottomNavigation extends StatelessWidget {
               ),
             ),
           ),
-          _NavItem(Icons.contacts_rounded, 3, selectedIndex, onSelected),
-          _NavItem(Icons.settings_rounded, 4, selectedIndex, onSelected),
+          _NavItem(
+            role == AppRole.family
+                ? Icons.groups_rounded
+                : Icons.contacts_rounded,
+            3,
+            selectedIndex,
+            onSelected,
+          ),
+          _NavItem(
+            role == AppRole.family
+                ? Icons.tune_rounded
+                : Icons.settings_rounded,
+            4,
+            selectedIndex,
+            onSelected,
+          ),
         ],
       ),
     );

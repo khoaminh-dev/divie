@@ -116,6 +116,7 @@ class _VoiceAssistantPageState extends State<VoiceAssistantPage> {
     _submittedCurrentSession = true;
     await _speech.stop();
     if (mounted) setState(() => _listening = false);
+    debugPrint('DiVie voice transcript: $text');
     await _ask(text);
   }
 
@@ -244,6 +245,13 @@ class _VoiceAssistantPageState extends State<VoiceAssistantPage> {
       final callTarget = _callTargetFor(text);
       if (callTarget != null) {
         await _handleVoiceCall(callTarget);
+        return;
+      }
+      if (_looksLikeCallIntent(text)) {
+        debugPrint('DiVie voice call intent had no usable contact name.');
+        await _setCallAnswer(
+          'Mình chưa nghe rõ tên người cần gọi. Bạn nói lại tên đúng như trong danh bạ nhé.',
+        );
         return;
       }
       final healthAction = _healthActionFor(text);
@@ -403,21 +411,28 @@ class _VoiceAssistantPageState extends State<VoiceAssistantPage> {
 
   String? _callTargetFor(String value) {
     final match = RegExp(
-      r'^(?:lam on )?(?:goi(?: dien)?|lien lac(?: voi)?)\s+(?:cho\s+)?(.+?)$',
+      r'(?:^|\s)(?:goi(?: dien)?|lien lac(?: voi)?)\s+(?:cho\s+)?(.+?)$',
     ).firstMatch(_normalizedText(value));
     if (match == null) return null;
 
     final target = (match.group(1) ?? '')
-        .replaceFirst(RegExp(r'\s+(?:cua toi|cua minh|nhe|di|voi)$'), '')
+        .replaceFirst(
+          RegExp(r'(?:\s+(?:cua toi|cua minh|nhe|di|voi|nha|duoc khong))+$'),
+          '',
+        )
         .trim();
     if (target.isEmpty || target == 'toi' || target == 'minh') return null;
     return target;
   }
 
+  bool _looksLikeCallIntent(String value) =>
+      RegExp(r'\b(?:goi|lien lac)\b').hasMatch(_normalizedText(value));
+
   Future<void> _handleVoiceCall(String target) async {
     try {
       final permitted = await FlutterContacts.requestPermission(readonly: true);
       if (!permitted) {
+        debugPrint('DiVie voice call lookup: contacts permission denied.');
         await _setCallAnswer(
           'DiVie cần được cho phép đọc danh bạ để tìm “$target”.',
         );
@@ -436,9 +451,12 @@ class _VoiceAssistantPageState extends State<VoiceAssistantPage> {
                 _normalizedText(contact.displayName).contains(target),
           )
           .toList();
+      debugPrint(
+        'DiVie voice call lookup: target="$target", matches=${matches.length}.',
+      );
       if (matches.isEmpty) {
         await _setCallAnswer(
-          'Mình chưa tìm thấy “$target” trong danh bạ điện thoại.',
+          'Mình chưa tìm thấy “$target” trong danh bạ điện thoại nên chưa thể mở cuộc gọi.',
         );
         return;
       }
@@ -459,6 +477,9 @@ class _VoiceAssistantPageState extends State<VoiceAssistantPage> {
           .map((item) => item.number.trim())
           .firstWhere((number) => number.isNotEmpty, orElse: () => '');
       if (phone.isEmpty) {
+        debugPrint(
+          'DiVie voice call lookup: matched contact has no phone number.',
+        );
         await _setCallAnswer(
           'Mình đã tìm thấy ${contact.displayName}, nhưng danh bạ chưa có số điện thoại.',
         );
@@ -469,7 +490,10 @@ class _VoiceAssistantPageState extends State<VoiceAssistantPage> {
       if (mounted) setState(() => _answer = answer);
       unawaited(_speakSafely(answer));
       await EmergencyService.callNumber(phone);
-    } catch (_) {
+      debugPrint('DiVie voice call lookup: dialer opened.');
+    } catch (error, stackTrace) {
+      debugPrint('DiVie voice call lookup failed: $error');
+      debugPrintStack(stackTrace: stackTrace);
       await _setCallAnswer(
         'Chưa mở được cuộc gọi. Bạn kiểm tra lại danh bạ rồi thử lại nhé.',
       );

@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter_contacts/flutter_contacts.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:http/http.dart' as http;
 import 'package:speech_to_text/speech_to_text.dart';
@@ -11,6 +12,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../core/auth/supabase_bootstrap.dart';
 import '../../core/config/app_config.dart';
 import '../../core/data/reminder_data_service.dart';
+import '../../core/device/emergency_service.dart';
 import '../../main.dart';
 import '../reminders/notification_service.dart';
 import '../reminders/reminder_command_parser.dart';
@@ -237,6 +239,11 @@ class _VoiceAssistantPageState extends State<VoiceAssistantPage> {
   Future<void> _ask(String text) async {
     setState(() => _sending = true);
     try {
+      final callTarget = _callTargetFor(text);
+      if (callTarget != null) {
+        await _handleVoiceCall(callTarget);
+        return;
+      }
       final healthAction = _healthActionFor(text);
       if (healthAction != null) {
         await _openHealthAction(healthAction);
@@ -372,15 +379,7 @@ class _VoiceAssistantPageState extends State<VoiceAssistantPage> {
   }
 
   _HealthVoiceAction? _healthActionFor(String value) {
-    final text = value
-        .toLowerCase()
-        .replaceAll(RegExp(r'[àáạảãâầấậẩẫăằắặẳẵ]'), 'a')
-        .replaceAll(RegExp(r'[èéẹẻẽêềếệểễ]'), 'e')
-        .replaceAll(RegExp(r'[ìíịỉĩ]'), 'i')
-        .replaceAll(RegExp(r'[òóọỏõôồốộổỗơờớợởỡ]'), 'o')
-        .replaceAll(RegExp(r'[ùúụủũưừứựửữ]'), 'u')
-        .replaceAll(RegExp(r'[ỳýỵỷỹ]'), 'y')
-        .replaceAll('đ', 'd');
+    final text = _normalizedText(value);
     final mentionsHealth =
         text.contains('huyet ap') ||
         text.contains('suc khoe') ||
@@ -399,6 +398,99 @@ class _VoiceAssistantPageState extends State<VoiceAssistantPage> {
     }
     return null;
   }
+
+  String? _callTargetFor(String value) {
+    final match = RegExp(
+      r'^(?:lam on )?(?:goi(?: dien)?|lien lac(?: voi)?)\s+(?:cho\s+)?(.+?)$',
+    ).firstMatch(_normalizedText(value));
+    if (match == null) return null;
+
+    final target = (match.group(1) ?? '')
+        .replaceFirst(RegExp(r'\s+(?:cua toi|cua minh|nhe|di|voi)$'), '')
+        .trim();
+    if (target.isEmpty || target == 'toi' || target == 'minh') return null;
+    return target;
+  }
+
+  Future<void> _handleVoiceCall(String target) async {
+    try {
+      final permitted = await FlutterContacts.requestPermission(readonly: true);
+      if (!permitted) {
+        await _setCallAnswer(
+          'DiVie cần được cho phép đọc danh bạ để tìm “$target”.',
+        );
+        return;
+      }
+
+      final contacts = await FlutterContacts.getContacts(
+        withProperties: true,
+        sorted: true,
+        deduplicateProperties: true,
+      );
+      final matches = contacts
+          .where(
+            (contact) =>
+                _normalizedText(contact.displayName) == target ||
+                _normalizedText(contact.displayName).contains(target),
+          )
+          .toList();
+      if (matches.isEmpty) {
+        await _setCallAnswer(
+          'Mình chưa tìm thấy “$target” trong danh bạ điện thoại.',
+        );
+        return;
+      }
+
+      final exactMatches = matches
+          .where((contact) => _normalizedText(contact.displayName) == target)
+          .toList();
+      final candidates = exactMatches.isNotEmpty ? exactMatches : matches;
+      if (candidates.length > 1) {
+        await _setCallAnswer(
+          'Mình tìm thấy nhiều người tên “$target”. Bạn hãy đặt tên rõ hơn trong danh bạ rồi thử lại nhé.',
+        );
+        return;
+      }
+
+      final contact = candidates.single;
+      final phone = contact.phones
+          .map((item) => item.number.trim())
+          .firstWhere((number) => number.isNotEmpty, orElse: () => '');
+      if (phone.isEmpty) {
+        await _setCallAnswer(
+          'Mình đã tìm thấy ${contact.displayName}, nhưng danh bạ chưa có số điện thoại.',
+        );
+        return;
+      }
+
+      final answer = 'Mình mở cuộc gọi đến ${contact.displayName} nhé.';
+      if (mounted) setState(() => _answer = answer);
+      unawaited(_speakSafely(answer));
+      await EmergencyService.callNumber(phone);
+    } catch (_) {
+      await _setCallAnswer(
+        'Chưa mở được cuộc gọi. Bạn kiểm tra lại danh bạ rồi thử lại nhé.',
+      );
+    }
+  }
+
+  Future<void> _setCallAnswer(String answer) async {
+    if (mounted) setState(() => _answer = answer);
+    await _speakSafely(answer);
+  }
+
+  String _normalizedText(String value) => value
+      .toLowerCase()
+      .replaceAll(RegExp(r'[àáạảãâầấậẩẫăằắặẳẵ]'), 'a')
+      .replaceAll(RegExp(r'[èéẹẻẽêềếệểễ]'), 'e')
+      .replaceAll(RegExp(r'[ìíịỉĩ]'), 'i')
+      .replaceAll(RegExp(r'[òóọỏõôồốộổỗơờớợởỡ]'), 'o')
+      .replaceAll(RegExp(r'[ùúụủũưừứựửữ]'), 'u')
+      .replaceAll(RegExp(r'[ỳýỵỷỹ]'), 'y')
+      .replaceAll('đ', 'd')
+      .replaceAll(RegExp(r'[^a-z0-9\s]'), ' ')
+      .replaceAll(RegExp(r'\s+'), ' ')
+      .trim();
 
   Future<void> _openHealthAction(_HealthVoiceAction action) async {
     final navigator = Navigator.of(context, rootNavigator: true);

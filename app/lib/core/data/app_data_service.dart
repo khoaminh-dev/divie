@@ -70,6 +70,36 @@ class AppDataService {
         .toList();
   }
 
+  /// Finds one DiVie account from a Vietnamese mobile number without relying
+  /// on a name match. Numbers are stored in the canonical 0xxxxxxxxx format.
+  Future<ContactRecord?> findContactByPhone(String value) async {
+    final phone = normalizeVietnamesePhone(value);
+    if (!isValidVietnameseMobilePhone(phone)) {
+      throw ArgumentError('Nhập số điện thoại Việt Nam hợp lệ.');
+    }
+
+    final rows = await client
+        .from('profiles')
+        .select('id, full_name, email, phone_number')
+        .eq('phone_number', phone)
+        .neq('id', _userId)
+        .limit(1);
+    final matches = (rows as List).whereType<Map<String, dynamic>>().toList();
+    if (matches.isEmpty) return null;
+    return _contactFromRow(matches.first);
+  }
+
+  static String normalizeVietnamesePhone(String value) {
+    final digits = value.replaceAll(RegExp(r'\D'), '');
+    if (digits.startsWith('84') && digits.length == 11) {
+      return '0${digits.substring(2)}';
+    }
+    return digits;
+  }
+
+  static bool isValidVietnameseMobilePhone(String value) =>
+      RegExp(r'^0(?:3|5|7|8|9)\d{8}$').hasMatch(value);
+
   Future<List<ConversationRecord>> loadConversations() async {
     final rows = await client
         .from('chat_participants')

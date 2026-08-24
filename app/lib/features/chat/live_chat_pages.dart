@@ -110,6 +110,13 @@ class _LiveContactsPageState extends State<LiveContactsPage> {
       controller: _searchController,
       onSearch: _search,
       onRefresh: _reload,
+      headerActions: [
+        IconButton(
+          tooltip: 'Tìm bằng số điện thoại',
+          onPressed: _showPhoneSearch,
+          icon: const Icon(Icons.phone_enabled_rounded, color: Colors.white),
+        ),
+      ],
       body: FutureBuilder<List<ContactRecord>>(
         future: _future,
         builder: (context, snapshot) {
@@ -147,7 +154,8 @@ class _LiveContactsPageState extends State<LiveContactsPage> {
             return const _EmptyState(
               icon: Icons.contacts_outlined,
               title: 'Chưa có liên hệ',
-              subtitle: 'Cho phép truy cập danh bạ để tìm người thân nhanh hơn.',
+              subtitle:
+                  'Cho phép truy cập danh bạ để tìm người thân nhanh hơn.',
             );
           }
           return ListView(
@@ -158,7 +166,8 @@ class _LiveContactsPageState extends State<LiveContactsPage> {
               if (_deviceContactsPermission && deviceContacts.isNotEmpty) ...[
                 const _LiveSectionTitle(
                   title: 'Danh bạ trên điện thoại',
-                  subtitle: 'Dữ liệu chỉ đọc trên máy, không tự tải lên hệ thống.',
+                  subtitle:
+                      'Dữ liệu chỉ đọc trên máy, không tự tải lên hệ thống.',
                 ),
                 for (final contact in deviceContacts) ...[
                   _DeviceContactTile(contact: contact),
@@ -198,9 +207,59 @@ class _LiveContactsPageState extends State<LiveContactsPage> {
     } on PostgrestException catch (error) {
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Không thể mở cuộc trò chuyện: ${error.message}')),
+        SnackBar(
+          content: Text('Không thể mở cuộc trò chuyện: ${error.message}'),
+        ),
       );
     }
+  }
+
+  Future<void> _showPhoneSearch() async {
+    final contact = await showDialog<ContactRecord>(
+      context: context,
+      builder: (_) => _PhoneSearchDialog(service: _service),
+    );
+    if (!mounted || contact == null) return;
+
+    final startChat = await showModalBottomSheet<bool>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetContext) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(24, 4, 24, 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _LiveInitialAvatar(contact.initials),
+              const SizedBox(height: 12),
+              Text(
+                contact.name,
+                style: const TextStyle(
+                  color: DivieColors.navy,
+                  fontSize: 21,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                contact.phone,
+                style: const TextStyle(color: DivieColors.muted, fontSize: 15),
+              ),
+              const SizedBox(height: 20),
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton.icon(
+                  onPressed: () => Navigator.of(sheetContext).pop(true),
+                  icon: const Icon(Icons.chat_bubble_rounded),
+                  label: const Text('Nhắn tin'),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    if (startChat == true && mounted) await _openChat(context, contact);
   }
 }
 
@@ -538,6 +597,7 @@ class _LivePageFrame extends StatelessWidget {
     required this.onSearch,
     required this.onRefresh,
     required this.body,
+    this.headerActions = const [],
   });
 
   final Color headerColor;
@@ -546,6 +606,7 @@ class _LivePageFrame extends StatelessWidget {
   final ValueChanged<String> onSearch;
   final VoidCallback onRefresh;
   final Widget body;
+  final List<Widget> headerActions;
 
   @override
   Widget build(BuildContext context) {
@@ -563,6 +624,7 @@ class _LivePageFrame extends StatelessWidget {
                   onChanged: onSearch,
                 ),
               ),
+              ...headerActions,
               const SizedBox(width: 10),
               IconButton(
                 tooltip: 'Làm mới',
@@ -577,6 +639,105 @@ class _LivePageFrame extends StatelessWidget {
             padding: const EdgeInsets.fromLTRB(24, 24, 24, 0),
             child: body,
           ),
+        ),
+      ],
+    );
+  }
+}
+
+class _PhoneSearchDialog extends StatefulWidget {
+  const _PhoneSearchDialog({required this.service});
+
+  final AppDataService service;
+
+  @override
+  State<_PhoneSearchDialog> createState() => _PhoneSearchDialogState();
+}
+
+class _PhoneSearchDialogState extends State<_PhoneSearchDialog> {
+  final _controller = TextEditingController();
+  String? _error;
+  bool _searching = false;
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  Future<void> _search() async {
+    final phone = AppDataService.normalizeVietnamesePhone(_controller.text);
+    if (!AppDataService.isValidVietnameseMobilePhone(phone)) {
+      setState(() => _error = 'Nhập số điện thoại Việt Nam hợp lệ.');
+      return;
+    }
+
+    setState(() {
+      _searching = true;
+      _error = null;
+    });
+    try {
+      final contact = await widget.service.findContactByPhone(phone);
+      if (!mounted) return;
+      if (contact == null) {
+        setState(() => _error = 'Chưa tìm thấy tài khoản DiVie dùng số này.');
+        return;
+      }
+      Navigator.of(context).pop(contact);
+    } on ArgumentError catch (error) {
+      if (mounted) setState(() => _error = error.message.toString());
+    } on PostgrestException catch (_) {
+      if (mounted) {
+        setState(() => _error = 'Chưa thể tìm lúc này. Vui lòng thử lại.');
+      }
+    } finally {
+      if (mounted) setState(() => _searching = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Tìm người bằng số điện thoại'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('Nhập số đã dùng để đăng ký DiVie.'),
+          const SizedBox(height: 16),
+          TextField(
+            controller: _controller,
+            enabled: !_searching,
+            keyboardType: TextInputType.phone,
+            textInputAction: TextInputAction.search,
+            onSubmitted: (_) => _search(),
+            decoration: const InputDecoration(
+              labelText: 'Số điện thoại',
+              hintText: 'Ví dụ: 0912 345 678',
+              prefixIcon: Icon(Icons.phone_rounded),
+              border: OutlineInputBorder(),
+            ),
+          ),
+          if (_error != null) ...[
+            const SizedBox(height: 10),
+            Text(_error!, style: const TextStyle(color: Colors.red)),
+          ],
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: _searching ? null : () => Navigator.of(context).pop(),
+          child: const Text('Hủy'),
+        ),
+        FilledButton.icon(
+          onPressed: _searching ? null : _search,
+          icon: _searching
+              ? const SizedBox.square(
+                  dimension: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Icon(Icons.search_rounded),
+          label: const Text('Tìm'),
         ),
       ],
     );
@@ -600,7 +761,11 @@ class _DeviceContactsPermissionCard extends StatelessWidget {
       ),
       child: Row(
         children: [
-          const Icon(Icons.contacts_outlined, color: DivieColors.teal, size: 28),
+          const Icon(
+            Icons.contacts_outlined,
+            color: DivieColors.teal,
+            size: 28,
+          ),
           const SizedBox(width: 14),
           const Expanded(
             child: Column(
@@ -715,7 +880,10 @@ class _DeviceContactTile extends StatelessWidget {
                     secondary,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(color: DivieColors.muted, fontSize: 14),
+                    style: const TextStyle(
+                      color: DivieColors.muted,
+                      fontSize: 14,
+                    ),
                   ),
                 ],
               ],

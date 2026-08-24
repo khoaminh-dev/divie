@@ -180,24 +180,40 @@ class _HealthCapturePageState extends State<HealthCapturePage> {
                 fit: BoxFit.contain,
               ),
             ),
-          Row(
-            children: [
-              Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: _busy ? null : _openCamera,
-                  icon: const Icon(Icons.camera_alt),
-                  label: const Text('Chụp lại'),
+          SizedBox(
+            width: double.infinity,
+            height: _image == null ? 98 : 82,
+            child: FilledButton.icon(
+              onPressed: _busy ? null : _openCamera,
+              style: FilledButton.styleFrom(
+                backgroundColor: const Color(0xFF087A84),
+                foregroundColor: Colors.white,
+                textStyle: const TextStyle(
+                  fontSize: 22,
+                  fontWeight: FontWeight.w900,
                 ),
               ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: _busy ? null : () => _pick(ImageSource.gallery),
-                  icon: const Icon(Icons.photo_library),
-                  label: const Text('Chọn ảnh'),
+              icon: const Icon(Icons.camera_alt_rounded, size: 36),
+              label: Text(_image == null ? 'Chụp ảnh máy đo' : 'Chụp lại ảnh'),
+            ),
+          ),
+          const SizedBox(height: 10),
+          SizedBox(
+            width: double.infinity,
+            height: 58,
+            child: OutlinedButton.icon(
+              onPressed: _busy ? null : () => _pick(ImageSource.gallery),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: const Color(0xFF087A84),
+                side: const BorderSide(color: Color(0xFF087A84), width: 1.5),
+                textStyle: const TextStyle(
+                  fontSize: 17,
+                  fontWeight: FontWeight.w800,
                 ),
               ),
-            ],
+              icon: const Icon(Icons.photo_library_rounded, size: 24),
+              label: const Text('Chọn ảnh đã chụp'),
+            ),
           ),
           const SizedBox(height: 12),
           if (_busy)

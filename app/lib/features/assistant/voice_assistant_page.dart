@@ -103,9 +103,6 @@ class _VoiceAssistantPageState extends State<VoiceAssistantPage> {
           _transcript = result.recognizedWords;
           if (result.finalResult) _speechConfidence = result.confidence;
         });
-        if (result.finalResult) {
-          unawaited(_submitCurrentTranscript());
-        }
       },
     );
   }
@@ -687,6 +684,21 @@ class _VoiceAssistantPageState extends State<VoiceAssistantPage> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
+          if (_listening && _transcript.isNotEmpty) ...[
+            Semantics(
+              liveRegion: true,
+              child: Text(
+                _transcript,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  color: DivieColors.navy,
+                  fontSize: 20,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ),
+            const SizedBox(height: 18),
+          ],
           _VoiceWave(listening: _listening, processing: _sending),
           const SizedBox(height: 26),
           FloatingActionButton.large(

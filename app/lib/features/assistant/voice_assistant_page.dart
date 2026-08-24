@@ -121,7 +121,7 @@ class _VoiceAssistantPageState extends State<VoiceAssistantPage> {
     _submittedCurrentSession = true;
     await _speech.stop();
     if (mounted) setState(() => _listening = false);
-    debugPrint('DiVie voice transcript: $text');
+    debugPrint('DiVie voice transcript: $text (confidence=$_speechConfidence)');
     if (!_isUsableVoiceTranscript(text)) {
       debugPrint(
         'DiVie voice transcript rejected: confidence=$_speechConfidence.',
@@ -134,7 +134,20 @@ class _VoiceAssistantPageState extends State<VoiceAssistantPage> {
 
   bool _isUsableVoiceTranscript(String value) {
     final normalized = _normalizedText(value);
-    if (normalized.length < 3 || !RegExp(r'[a-z0-9]').hasMatch(normalized)) {
+    final words = normalized
+        .split(' ')
+        .where((word) => word.isNotEmpty)
+        .toList();
+    if (normalized.length < 3 ||
+        words.length < 2 ||
+        !RegExp(r'[a-z0-9]').hasMatch(normalized)) {
+      return false;
+    }
+
+    // Do not act on a phrase that the recognizer stopped in the middle of.
+    // In particular, a trailing connector means the intended person or action
+    // has not yet been captured.
+    if (RegExp(r'\b(?:cho|cua|voi|va|la|thi|roi)$').hasMatch(normalized)) {
       return false;
     }
 

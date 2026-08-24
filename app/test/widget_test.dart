@@ -21,16 +21,16 @@ void main() {
     // Keep each test isolated from the previous viewport.
   });
 
-  testWidgets('Caregiver dashboard matches the mobile content contract', (
+  testWidgets('Family dashboard matches the shared-account mobile contract', (
     tester,
   ) async {
     await pumpAt(tester, const Size(393, 852));
 
-    expect(find.textContaining('Kết nối người thân'), findsWidgets);
+    expect(find.text('Góc người thân'), findsOneWidget);
     expect(find.text('Theo dõi sức khỏe'), findsOneWidget);
     expect(find.text('Quản lý thuốc'), findsOneWidget);
     expect(find.text('Tin nhắn'), findsOneWidget);
-    expect(find.text('Người được chăm sóc'), findsOneWidget);
+    expect(find.text('Danh bạ'), findsOneWidget);
     expect(find.byIcon(Icons.mic_rounded), findsOneWidget);
   });
 
@@ -40,11 +40,10 @@ void main() {
     await pumpAt(tester, const Size(320, 640));
 
     expect(find.byType(ListView), findsOneWidget);
-    expect(find.text('Người được chăm sóc'), findsOneWidget);
   });
 
   testWidgets(
-    'Settings, care connections and messages are reachable from the nav',
+    'Settings, role selection and messages are reachable from the nav',
     (tester) async {
       await pumpAt(tester, const Size(393, 852));
 
@@ -52,9 +51,13 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('Tài khoản, trợ lý AI và thiết bị'), findsOneWidget);
 
-      await tester.tap(find.byIcon(Icons.groups_rounded).last);
+      await tester.tap(find.text('Vai trò của thiết bị'));
       await tester.pumpAndSettle();
-      expect(find.text('Người được chăm sóc'), findsOneWidget);
+      expect(find.text('Người thân'), findsWidgets);
+      expect(find.text('Người cao tuổi'), findsOneWidget);
+
+      await tester.tap(find.text('Người thân').last);
+      await tester.pumpAndSettle();
 
       await tester.tap(find.byIcon(Icons.chat_bubble_rounded).last);
       await tester.pumpAndSettle();

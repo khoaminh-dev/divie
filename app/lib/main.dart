@@ -16,9 +16,7 @@ import 'core/data/health_measurement_data_service.dart';
 import 'core/device/emergency_service.dart';
 import 'core/data/device_registration_service.dart';
 import 'core/data/account_profile_service.dart';
-import 'core/data/care_relationship_service.dart';
 import 'core/roles/app_role.dart';
-import 'features/care/care_connections_page.dart';
 import 'features/auth/role_selection_page.dart';
 import 'features/assistant/voice_assistant_page.dart';
 import 'core/data/emergency_contacts_data_service.dart';
@@ -336,9 +334,7 @@ class _DivieShellState extends State<DivieShell> {
       case 1:
         return const _MessagesPage();
       case 3:
-        return widget.role == AppRole.family
-            ? const CareConnectionsPage(role: AppRole.family)
-            : const _ContactsPage();
+        return const _ContactsPage();
       case 4:
         return _SettingsPage(
           role: widget.role,
@@ -377,27 +373,8 @@ class _FamilyDashboardPageState extends State<_FamilyDashboardPage> {
       final client = SupabaseBootstrap.enabled
           ? Supabase.instance.client
           : null;
-      final recipients = client == null
-          ? const <CareRecipient>[]
-          : await CareRelationshipService(client).loadRecipients();
-      final recipient = recipients.isEmpty ? null : recipients.first;
-      if (recipient == null) {
-        if (mounted) {
-          setState(() {
-            _summary = const _FamilyCareSummary.empty();
-            _loading = false;
-          });
-        }
-        return;
-      }
-      final reminderService = ReminderDataService(
-        client: client,
-        accountId: recipient.elderId,
-      );
-      final healthService = HealthMeasurementDataService(
-        client: client,
-        ownerId: recipient.elderId,
-      );
+      final reminderService = ReminderDataService(client: client);
+      final healthService = HealthMeasurementDataService(client: client);
       final reminders = await reminderService.load();
       final statuses = await reminderService.loadStatuses(DateTime.now());
       final measurements = await healthService.load(limit: 1);
@@ -405,7 +382,6 @@ class _FamilyDashboardPageState extends State<_FamilyDashboardPage> {
       final activeReminders = reminders.where((item) => item.enabled).toList();
       setState(() {
         _summary = _FamilyCareSummary(
-          recipient: recipient,
           activeReminders: activeReminders.length,
           takenToday: activeReminders
               .where((item) => statuses[item.id] == 'taken')
@@ -425,61 +401,30 @@ class _FamilyDashboardPageState extends State<_FamilyDashboardPage> {
   }
 
   void _openHealth() {
-    final recipient = _summary?.recipient;
-    if (recipient == null) {
-      unawaited(_manageCareConnection());
-      return;
-    }
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => HealthInsightsPage(ownerId: recipient.elderId),
-      ),
-    );
+    Navigator.of(
+      context,
+    ).push(MaterialPageRoute(builder: (_) => const HealthInsightsPage()));
   }
 
   void _openReminders() {
-    final recipient = _summary?.recipient;
-    if (recipient == null) {
-      unawaited(_manageCareConnection());
-      return;
-    }
     Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (_) =>
-            RemindersPage(role: AppRole.family, accountId: recipient.elderId),
+        builder: (_) => const RemindersPage(role: AppRole.family),
       ),
     );
   }
 
   void _openCareMessages() {
-    final recipient = _summary?.recipient;
-    if (recipient == null) {
-      unawaited(_manageCareConnection());
-      return;
-    }
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => LiveMessagesPage(
-          initialRecipientId: recipient.elderId,
-          initialRecipientName: recipient.name,
-        ),
-      ),
-    );
+    Navigator.of(
+      context,
+    ).push(MaterialPageRoute(builder: (_) => const LiveMessagesPage()));
   }
 
-  Future<void> _manageCareConnection() async {
-    await Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => const CareConnectionsPage(role: AppRole.family),
-      ),
-    );
-    if (mounted) await _load();
-  }
+  void _openContacts() => widget.onNavigate(3);
 
   @override
   Widget build(BuildContext context) {
     final summary = _summary;
-    final recipient = summary?.recipient;
     return RefreshIndicator(
       onRefresh: _load,
       child: ListView(
@@ -494,9 +439,7 @@ class _FamilyDashboardPageState extends State<_FamilyDashboardPage> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      recipient == null
-                          ? 'Kết nối người thân'
-                          : 'Chăm sóc ${recipient.name}',
+                      'Góc người thân',
                       style: TextStyle(
                         color: DivieColors.navy,
                         fontSize: 28,
@@ -505,9 +448,7 @@ class _FamilyDashboardPageState extends State<_FamilyDashboardPage> {
                     ),
                     SizedBox(height: 5),
                     Text(
-                      recipient == null
-                          ? 'Kết nối một tài khoản để bắt đầu chăm sóc'
-                          : 'Dữ liệu được người thân cho phép chia sẻ',
+                      'Theo dõi sức khỏe và lịch thuốc trong tài khoản này',
                       style: TextStyle(
                         color: DivieColors.muted,
                         fontSize: 15,
@@ -526,14 +467,11 @@ class _FamilyDashboardPageState extends State<_FamilyDashboardPage> {
             ],
           ),
           const SizedBox(height: 24),
-          if (recipient == null && !_loading)
-            _FamilyConnectionPrompt(onTap: _manageCareConnection)
-          else
-            _FamilyTodayBand(
-              summary: summary,
-              loading: _loading,
-              onTap: _openHealth,
-            ),
+          _FamilyTodayBand(
+            summary: summary,
+            loading: _loading,
+            onTap: _openHealth,
+          ),
           const SizedBox(height: 22),
           const Text(
             'Việc cần làm',
@@ -557,7 +495,7 @@ class _FamilyDashboardPageState extends State<_FamilyDashboardPage> {
                 title: 'Theo dõi sức khỏe',
                 subtitle: 'Chỉ số và xu hướng',
                 color: DivieColors.teal,
-                onTap: recipient == null ? _manageCareConnection : _openHealth,
+                onTap: _openHealth,
               ),
               _FamilyActionTile(
                 icon: Icons.medication_outlined,
@@ -569,18 +507,16 @@ class _FamilyDashboardPageState extends State<_FamilyDashboardPage> {
               _FamilyActionTile(
                 icon: Icons.chat_bubble_outline_rounded,
                 title: 'Tin nhắn',
-                subtitle: recipient == null
-                    ? 'Kết nối trước để trao đổi'
-                    : 'Trao đổi với ${recipient.name}',
+                subtitle: 'Trao đổi với danh bạ',
                 color: const Color(0xFF8B5EAF),
                 onTap: _openCareMessages,
               ),
               _FamilyActionTile(
                 icon: Icons.contact_phone_outlined,
-                title: 'Người được chăm sóc',
-                subtitle: 'Kết nối và quyền chia sẻ',
+                title: 'Danh bạ',
+                subtitle: 'Gọi và nhắn tin',
                 color: const Color(0xFFB45D3B),
-                onTap: _manageCareConnection,
+                onTap: _openContacts,
               ),
             ],
           ),
@@ -608,70 +544,16 @@ class _FamilyDashboardPageState extends State<_FamilyDashboardPage> {
 
 class _FamilyCareSummary {
   const _FamilyCareSummary({
-    required this.recipient,
     required this.activeReminders,
     required this.takenToday,
     required this.skippedToday,
     required this.latestMeasurement,
   });
 
-  const _FamilyCareSummary.empty()
-    : recipient = null,
-      activeReminders = 0,
-      takenToday = 0,
-      skippedToday = 0,
-      latestMeasurement = null;
-
-  final CareRecipient? recipient;
   final int activeReminders;
   final int takenToday;
   final int skippedToday;
   final HealthMeasurementHistoryItem? latestMeasurement;
-}
-
-class _FamilyConnectionPrompt extends StatelessWidget {
-  const _FamilyConnectionPrompt({required this.onTap});
-
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) => Material(
-    color: Colors.white,
-    borderRadius: BorderRadius.circular(8),
-    child: InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(8),
-      child: const Padding(
-        padding: EdgeInsets.all(18),
-        child: Row(
-          children: [
-            Icon(Icons.group_add_outlined, color: DivieColors.teal, size: 31),
-            SizedBox(width: 14),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Chưa có người được chăm sóc',
-                    style: TextStyle(
-                      color: DivieColors.navy,
-                      fontWeight: FontWeight.w900,
-                    ),
-                  ),
-                  SizedBox(height: 4),
-                  Text(
-                    'Thêm số điện thoại để gửi lời mời kết nối.',
-                    style: TextStyle(color: DivieColors.muted, fontSize: 13),
-                  ),
-                ],
-              ),
-            ),
-            Icon(Icons.chevron_right_rounded, color: DivieColors.teal),
-          ],
-        ),
-      ),
-    ),
-  );
 }
 
 class _FamilyTodayBand extends StatelessWidget {
@@ -1781,24 +1663,6 @@ class _SettingsPage extends StatelessWidget {
           ),
           const SizedBox(height: 14),
           _RoleSettingTile(role: role, onRoleChanged: onRoleChanged),
-          if (role == AppRole.elder) ...[
-            const SizedBox(height: 14),
-            _SettingsCard(
-              child: _SettingsTile(
-                icon: Icons.groups_rounded,
-                title: 'Chia sẻ với người thân',
-                subtitle: 'Xem và quyết định lời mời chăm sóc',
-                iconBackground: const Color(0xFFE7F0FF),
-                iconColor: const Color(0xFF3777C8),
-                onTap: () => Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (_) =>
-                        const CareConnectionsPage(role: AppRole.elder),
-                  ),
-                ),
-              ),
-            ),
-          ],
           const SizedBox(height: 22),
           const _PremiumCard(),
           const SizedBox(height: 30),
@@ -2127,7 +1991,6 @@ class _SettingsTile extends StatelessWidget {
     required this.iconBackground,
     required this.iconColor,
     this.trailing,
-    this.onTap,
   });
 
   final IconData icon;
@@ -2136,7 +1999,6 @@ class _SettingsTile extends StatelessWidget {
   final Color iconBackground;
   final Color iconColor;
   final Widget? trailing;
-  final VoidCallback? onTap;
 
   VoidCallback? _defaultAction(BuildContext context) {
     if (icon == Icons.emergency_rounded) {
@@ -2170,7 +2032,7 @@ class _SettingsTile extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 10),
       child: InkWell(
-        onTap: onTap ?? _defaultAction(context),
+        onTap: _defaultAction(context),
         borderRadius: BorderRadius.circular(18),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.center,

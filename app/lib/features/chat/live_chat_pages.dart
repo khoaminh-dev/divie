@@ -44,13 +44,19 @@ class _LiveContactsPageState extends State<LiveContactsPage> {
         )
         .subscribe();
     _refreshTimer = Timer.periodic(const Duration(seconds: 30), (_) {
-      if (mounted) setState(() => _future = _service.loadContacts());
+      if (mounted) {
+        setState(() {
+          _future = _service.loadContacts();
+        });
+      }
     });
   }
 
   void _reload() {
     if (!mounted) return;
-    setState(() => _future = _service.loadContacts());
+    setState(() {
+      _future = _service.loadContacts();
+    });
   }
 
   Future<void> _loadDeviceContacts() async {
@@ -323,13 +329,19 @@ class _LiveMessagesPageState extends State<LiveMessagesPage> {
         )
         .subscribe();
     _refreshTimer = Timer.periodic(const Duration(seconds: 12), (_) {
-      if (mounted) setState(() => _future = _loadOverview());
+      if (mounted) {
+        setState(() {
+          _future = _loadOverview();
+        });
+      }
     });
   }
 
   void _reload() {
     if (!mounted) return;
-    setState(() => _future = _loadOverview());
+    setState(() {
+      _future = _loadOverview();
+    });
   }
 
   Future<_MessagesOverview> _loadOverview() async {
@@ -531,14 +543,18 @@ class _ChatDetailPageState extends State<_ChatDetailPage> {
           ),
           callback: (_) {
             if (mounted && !_sending) {
-              setState(() => _future = _service.loadMessages(widget.roomId));
+              setState(() {
+                _future = _service.loadMessages(widget.roomId);
+              });
             }
           },
         )
         .subscribe();
     _refreshTimer = Timer.periodic(const Duration(seconds: 5), (_) {
       if (mounted && !_sending) {
-        setState(() => _future = _service.loadMessages(widget.roomId));
+        setState(() {
+          _future = _service.loadMessages(widget.roomId);
+        });
       }
     });
   }
@@ -562,7 +578,9 @@ class _ChatDetailPageState extends State<_ChatDetailPage> {
       await _service.sendMessage(widget.roomId, text);
       _controller.clear();
       if (mounted) {
-        setState(() => _future = _service.loadMessages(widget.roomId));
+        setState(() {
+          _future = _service.loadMessages(widget.roomId);
+        });
       }
     } catch (error) {
       if (mounted) {
@@ -603,9 +621,9 @@ class _ChatDetailPageState extends State<_ChatDetailPage> {
                 if (snapshot.hasError) {
                   return _DataError(
                     error: snapshot.error,
-                    onRetry: () => setState(
-                      () => _future = _service.loadMessages(widget.roomId),
-                    ),
+                    onRetry: () => setState(() {
+                      _future = _service.loadMessages(widget.roomId);
+                    }),
                   );
                 }
                 final messages = snapshot.data ?? const <MessageRecord>[];

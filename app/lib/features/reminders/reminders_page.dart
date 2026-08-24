@@ -29,8 +29,6 @@ class _RemindersPageState extends State<RemindersPage> {
   String? _error;
   RealtimeChannel? _realtimeChannel;
 
-  bool get _isFamily => widget.role == AppRole.family;
-
   @override
   void initState() {
     super.initState();
@@ -82,10 +80,8 @@ class _RemindersPageState extends State<RemindersPage> {
     try {
       final items = await _service.load();
       final statuses = await _service.loadStatuses(DateTime.now());
-      if (!_isFamily) {
-        for (final item in items) {
-          await NotificationService.instance.trySchedule(item);
-        }
+      for (final item in items) {
+        await NotificationService.instance.trySchedule(item);
       }
       if (!mounted) return;
       setState(() {
@@ -112,9 +108,9 @@ class _RemindersPageState extends State<RemindersPage> {
     if (result == null) return;
     try {
       final created = await _service.create(result);
-      final notificationReady = _isFamily
-          ? true
-          : await NotificationService.instance.trySchedule(created);
+      final notificationReady = await NotificationService.instance.trySchedule(
+        created,
+      );
       if (!mounted) return;
       setState(() => _items = [..._items, created]..sort(_sortByTime));
       if (!notificationReady) {
@@ -136,9 +132,9 @@ class _RemindersPageState extends State<RemindersPage> {
     if (result == null) return;
     try {
       await _service.update(result);
-      final notificationReady = _isFamily
-          ? true
-          : await NotificationService.instance.trySchedule(result);
+      final notificationReady = await NotificationService.instance.trySchedule(
+        result,
+      );
       if (!mounted) return;
       setState(() {
         _items =
@@ -165,12 +161,11 @@ class _RemindersPageState extends State<RemindersPage> {
     });
     try {
       await _service.update(updated);
-      if (!_isFamily) {
-        final notificationReady = await NotificationService.instance
-            .trySchedule(updated);
-        if (!notificationReady) {
-          _showError('Đã cập nhật lịch, nhưng máy chưa bật được thông báo.');
-        }
+      final notificationReady = await NotificationService.instance.trySchedule(
+        updated,
+      );
+      if (!notificationReady) {
+        _showError('Đã cập nhật lịch, nhưng máy chưa bật được thông báo.');
       }
     } catch (error) {
       debugPrint('DiVie reminder toggle failed: $error');
@@ -184,9 +179,7 @@ class _RemindersPageState extends State<RemindersPage> {
     );
     try {
       await _service.delete(item);
-      if (!_isFamily) {
-        await NotificationService.instance.cancel(item.id);
-      }
+      await NotificationService.instance.cancel(item.id);
     } catch (_) {
       _showError('Không xóa được lịch nhắc thuốc.');
     }
@@ -213,6 +206,20 @@ class _RemindersPageState extends State<RemindersPage> {
     ).showSnackBar(SnackBar(content: Text(message)));
   }
 
+  Future<void> _testNotification() async {
+    final delivered = await NotificationService.instance.showTestNotification();
+    if (!mounted) return;
+    if (!delivered) {
+      _showError(
+        'Hãy cho phép thông báo trong Cài đặt điện thoại rồi thử lại.',
+      );
+      return;
+    }
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('Đã gửi thông báo kiểm tra.')));
+  }
+
   @override
   void dispose() {
     final channel = _realtimeChannel;
@@ -227,7 +234,9 @@ class _RemindersPageState extends State<RemindersPage> {
 
   @override
   Widget build(BuildContext context) {
-    final title = _isFamily ? 'Quản lý nhắc thuốc' : 'Thuốc hôm nay';
+    final title = widget.role == AppRole.family
+        ? 'Quản lý nhắc thuốc'
+        : 'Thuốc hôm nay';
     return Scaffold(
       backgroundColor: const Color(0xFFF1FAFA),
       appBar: AppBar(
@@ -236,8 +245,11 @@ class _RemindersPageState extends State<RemindersPage> {
         foregroundColor: _navy,
         elevation: 0,
         actions: [
-          if (_isFamily)
-            IconButton(onPressed: _add, icon: const Icon(Icons.add_rounded)),
+          IconButton(
+            tooltip: 'Kiểm tra thông báo',
+            onPressed: _testNotification,
+            icon: const Icon(Icons.notifications_active_outlined),
+          ),
         ],
       ),
       body: _loading
@@ -245,14 +257,14 @@ class _RemindersPageState extends State<RemindersPage> {
           : _error != null
           ? Center(child: Text(_error!))
           : _items.isEmpty
-          ? _EmptyReminders(onAdd: _isFamily ? _add : null, role: widget.role)
+          ? _EmptyReminders(onAdd: _add, role: widget.role)
           : RefreshIndicator(
               onRefresh: _load,
               child: ListView.separated(
-                padding: const EdgeInsets.fromLTRB(20, 8, 20, 30),
+                padding: const EdgeInsets.fromLTRB(20, 8, 20, 104),
                 itemCount: _items.length,
                 separatorBuilder: (_, _) => const SizedBox(height: 12),
-                itemBuilder: (_, index) => _isFamily
+                itemBuilder: (_, index) => widget.role == AppRole.family
                     ? _FamilyReminderCard(
                         item: _items[index],
                         onToggle: (value) => _toggle(_items[index], value),
@@ -267,9 +279,22 @@ class _RemindersPageState extends State<RemindersPage> {
                       ),
               ),
             ),
-      floatingActionButton: _isFamily && _items.isNotEmpty
-          ? FloatingActionButton(onPressed: _add, child: const Icon(Icons.add))
-          : null,
+      bottomNavigationBar: _loading || _error != null || _items.isEmpty
+          ? null
+          : SafeArea(
+              minimum: const EdgeInsets.fromLTRB(20, 8, 20, 14),
+              child: SizedBox(
+                height: 62,
+                child: FilledButton.icon(
+                  onPressed: _add,
+                  icon: const Icon(Icons.add_alarm_rounded, size: 28),
+                  label: const Text(
+                    'Tạo lịch mới',
+                    style: TextStyle(fontSize: 19, fontWeight: FontWeight.w900),
+                  ),
+                ),
+              ),
+            ),
     );
   }
 }

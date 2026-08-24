@@ -221,10 +221,6 @@ class _DivieShellState extends State<DivieShell> {
   Future<void> _syncReminders() async {
     if (!SupabaseBootstrap.enabled) return;
     try {
-      if (widget.role == AppRole.family) {
-        await NotificationService.instance.cancelAll();
-        return;
-      }
       final service = ReminderDataService(client: Supabase.instance.client);
       final reminders = await service.load();
       for (final reminder in reminders) {

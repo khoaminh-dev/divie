@@ -10,8 +10,11 @@ class NotificationService {
 
   static final instance = NotificationService._();
   final _plugin = FlutterLocalNotificationsPlugin();
+  Future<void>? _initialization;
 
-  Future<void> initialize() async {
+  Future<void> initialize() => _initialization ??= _initialize();
+
+  Future<void> _initialize() async {
     tz.initializeTimeZones();
     tz.setLocalLocation(tz.getLocation('Asia/Ho_Chi_Minh'));
     // Android notifications need a dedicated drawable icon. The adaptive
@@ -38,6 +41,7 @@ class NotificationService {
   }
 
   Future<void> schedule(MedicineReminder reminder) async {
+    await initialize();
     await cancel(reminder.id);
     if (!reminder.enabled) return;
     final parts = reminder.time.split(':');
@@ -98,6 +102,7 @@ class NotificationService {
   /// look like it failed to create.
   Future<bool> trySchedule(MedicineReminder reminder) async {
     try {
+      if (!await _ensureNotificationsEnabled()) return false;
       await schedule(reminder);
       return true;
     } catch (error, stackTrace) {
@@ -105,6 +110,48 @@ class NotificationService {
       debugPrintStack(stackTrace: stackTrace);
       return false;
     }
+  }
+
+  Future<bool> showTestNotification() async {
+    try {
+      if (!await _ensureNotificationsEnabled()) return false;
+      await _plugin.show(
+        2147483646,
+        'DiVie đã bật nhắc thuốc',
+        'Đây là thông báo kiểm tra trên điện thoại này.',
+        const NotificationDetails(
+          android: AndroidNotificationDetails(
+            'medicine_reminders',
+            'Nhắc thuốc',
+            channelDescription: 'Thông báo nhắc uống thuốc',
+            importance: Importance.max,
+            priority: Priority.high,
+          ),
+          iOS: DarwinNotificationDetails(),
+        ),
+      );
+      return true;
+    } catch (error, stackTrace) {
+      debugPrint('DiVie notification test failed: $error');
+      debugPrintStack(stackTrace: stackTrace);
+      return false;
+    }
+  }
+
+  Future<bool> _ensureNotificationsEnabled() async {
+    await initialize();
+    final androidPlugin = _plugin
+        .resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin
+        >();
+    if (androidPlugin == null) return true;
+
+    var enabled = await androidPlugin.areNotificationsEnabled();
+    if (enabled == false) {
+      await androidPlugin.requestNotificationsPermission();
+      enabled = await androidPlugin.areNotificationsEnabled();
+    }
+    return enabled != false;
   }
 
   Future<void> cancel(int id) => _plugin.cancel(_notificationId(id));

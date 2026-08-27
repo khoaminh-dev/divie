@@ -1,4 +1,3 @@
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../device/emergency_contacts_store.dart';
@@ -13,7 +12,7 @@ class EmergencyContactsDataService {
 
   bool get isRemote => client != null && client!.auth.currentUser != null;
 
-  Future<List<String>> load() async {
+  Future<List<EmergencyContact>> load() async {
     final cached = await _local.load();
     if (!isRemote) return cached;
 
@@ -21,25 +20,18 @@ class EmergencyContactsDataService {
       final userId = client!.auth.currentUser!.id;
       final row = await client!
           .from('divie_emergency_contacts')
-          .select('numbers')
+          .select('contacts, numbers')
           .eq('account_id', userId)
           .maybeSingle();
-      final numbers =
-          (row?['numbers'] as List?)
-              ?.whereType<String>()
-              .map((value) => value.trim())
-              .where((value) => value.isNotEmpty)
-              .take(5)
-              .toList() ??
-          <String>[];
+      final contacts = _contactsFromRow(row);
 
       // One-time migration for contacts that were entered before account sync
       // was available.
-      if (numbers.isEmpty && cached.isNotEmpty) {
+      if (contacts.isEmpty && cached.isNotEmpty) {
         await save(cached);
         return cached;
       }
-      return numbers;
+      return contacts;
     } catch (_) {
       // Keep the emergency screen usable if the device temporarily loses the
       // network or the migration has not been applied on the backend yet.
@@ -47,19 +39,37 @@ class EmergencyContactsDataService {
     }
   }
 
-  Future<void> save(List<String> contacts) async {
+  Future<void> save(List<EmergencyContact> contacts) async {
     final cleaned = contacts
-        .map((value) => value.trim())
-        .where((value) => value.isNotEmpty)
+        .map((contact) => contact.cleaned())
+        .where((contact) => contact.phone.isNotEmpty)
         .take(5)
         .toList();
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setStringList('divie_emergency_contacts', cleaned);
+    await _local.save(cleaned);
 
     if (!isRemote) return;
     await client!.from('divie_emergency_contacts').upsert({
       'account_id': client!.auth.currentUser!.id,
-      'numbers': cleaned,
+      'contacts': cleaned.map((contact) => contact.toJson()).toList(),
+      'numbers': cleaned.map((contact) => contact.phone).toList(),
     }, onConflict: 'account_id');
+  }
+
+  List<EmergencyContact> _contactsFromRow(Map<String, dynamic>? row) {
+    final structured =
+        (row?['contacts'] as List?)
+            ?.map(EmergencyContact.fromJson)
+            .whereType<EmergencyContact>()
+            .take(5)
+            .toList() ??
+        const <EmergencyContact>[];
+    if (structured.isNotEmpty) return structured;
+    return (row?['numbers'] as List?)
+            ?.whereType<String>()
+            .map((phone) => EmergencyContact(name: '', phone: phone.trim()))
+            .where((contact) => contact.phone.isNotEmpty)
+            .take(5)
+            .toList() ??
+        const <EmergencyContact>[];
   }
 }

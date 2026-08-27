@@ -1027,6 +1027,19 @@ class _VoiceAssistantPageState extends State<VoiceAssistantPage> {
             onPressed: _sending ? null : _toggleListening,
             child: const Icon(Icons.mic_rounded, color: Colors.white, size: 38),
           ),
+          const SizedBox(height: 10),
+          Text(
+            _sending
+                ? 'DiVie đang xử lý'
+                : (_listening
+                      ? 'Đang nghe, chạm lại để dừng'
+                      : 'Chạm vào micro để bật mic'),
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              color: DivieColors.muted,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
         ],
       ),
     );

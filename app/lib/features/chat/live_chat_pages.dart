@@ -525,6 +525,7 @@ class _ChatDetailPage extends StatefulWidget {
 
 class _ChatDetailPageState extends State<_ChatDetailPage> {
   final _controller = TextEditingController();
+  final _scrollController = ScrollController();
   late final AppDataService _service;
   List<MessageRecord>? _messages;
   Object? _messagesError;
@@ -584,6 +585,7 @@ class _ChatDetailPageState extends State<_ChatDetailPage> {
       unawaited(Supabase.instance.client.removeChannel(channel));
     }
     _controller.dispose();
+    _scrollController.dispose();
     super.dispose();
   }
 
@@ -594,7 +596,8 @@ class _ChatDetailPageState extends State<_ChatDetailPage> {
     try {
       await _service.sendMessage(widget.roomId, text);
       _controller.clear();
-      unawaited(_reloadMessages());
+      await _reloadMessages();
+      _scrollToNewest();
     } catch (error) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -606,6 +609,18 @@ class _ChatDetailPageState extends State<_ChatDetailPage> {
     } finally {
       if (mounted) setState(() => _sending = false);
     }
+  }
+
+  void _scrollToNewest() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_scrollController.hasClients) {
+        _scrollController.animateTo(
+          0,
+          duration: const Duration(milliseconds: 220),
+          curve: Curves.easeOut,
+        );
+      }
+    });
   }
 
   @override
@@ -643,7 +658,7 @@ class _ChatDetailPageState extends State<_ChatDetailPage> {
                   );
                 }
                 return ListView.builder(
-                  reverse: true,
+                  controller: _scrollController,
                   padding: const EdgeInsets.all(18),
                   itemCount: messages.length,
                   itemBuilder: (_, index) {

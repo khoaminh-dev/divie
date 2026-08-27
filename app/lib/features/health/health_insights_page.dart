@@ -6,6 +6,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../core/auth/supabase_bootstrap.dart';
 import '../../core/data/health_measurement_data_service.dart';
+import 'blood_pressure_assessment.dart';
 
 class HealthInsightsPage extends StatefulWidget {
   const HealthInsightsPage({super.key, this.ownerId});
@@ -81,6 +82,12 @@ class _HealthInsightsPageState extends State<HealthInsightsPage> {
   Widget build(BuildContext context) {
     final items = _filteredItems;
     final latest = items.isEmpty ? null : items.last;
+    final latestAssessment = latest == null
+        ? null
+        : BloodPressureAssessment.evaluate(
+            systolic: latest.systolic,
+            diastolic: latest.diastolic,
+          );
     final insights = _buildInsights(items);
 
     return Scaffold(
@@ -132,11 +139,23 @@ class _HealthInsightsPageState extends State<HealthInsightsPage> {
                           'Sau khi chụp và xác nhận kết quả máy đo, dữ liệu sẽ xuất hiện ở đây.',
                     ),
                   if (_error == null && items.isNotEmpty) ...[
-                    _SummaryCards(latest: latest!, items: items),
+                    _SummaryCards(
+                      latest: latest!,
+                      items: items,
+                      assessment: latestAssessment!,
+                    ),
+                    if (latestAssessment.isAbnormal) ...[
+                      const SizedBox(height: 16),
+                      _CurrentReadingAlert(
+                        assessment: latestAssessment,
+                        pulse: latest.pulse,
+                      ),
+                    ],
                     const SizedBox(height: 16),
                     _SectionCard(
                       title: 'Biểu đồ huyết áp',
-                      subtitle: 'Đơn vị: mmHg · mỗi điểm là một lần đo',
+                      subtitle:
+                          'Đơn vị: mmHg · chấm xanh bình thường, chấm đỏ cần theo dõi',
                       child: _chartItems.length < 2
                           ? const Padding(
                               padding: EdgeInsets.symmetric(vertical: 28),
@@ -196,32 +215,43 @@ class _HealthInsightsPageState extends State<HealthInsightsPage> {
     final latest = items.last;
     final insights = <_HealthInsight>[];
     final recent = items.reversed.take(3).toList();
-    final highCount = recent.where(_isHighPressure).length;
-    final lowCount = recent.where(_isLowPressure).length;
+    final assessment = BloodPressureAssessment.evaluate(
+      systolic: latest.systolic,
+      diastolic: latest.diastolic,
+    );
+    final abnormalCount = recent
+        .where(
+          (item) => BloodPressureAssessment.evaluate(
+            systolic: item.systolic,
+            diastolic: item.diastolic,
+          ).isAbnormal,
+        )
+        .length;
 
-    if (_isHighPressure(latest) || highCount >= 2) {
+    if (assessment.isAbnormal) {
       insights.add(
-        const _HealthInsight(
-          icon: Icons.trending_up_rounded,
-          color: Color(0xFFD97706),
-          title: 'Huyết áp đang ở mức cần theo dõi',
-          message:
-              'Các lần đo gần đây có chỉ số cao hơn khoảng theo dõi thông thường. Nên đo lại khi nghỉ ngơi và trao đổi với người thân hoặc nhân viên y tế nếu tình trạng lặp lại.',
-        ),
-      );
-    } else if (_isLowPressure(latest) || lowCount >= 2) {
-      insights.add(
-        const _HealthInsight(
-          icon: Icons.trending_down_rounded,
-          color: Color(0xFF2563EB),
-          title: 'Huyết áp đang ở mức thấp cần theo dõi',
-          message:
-              'Một số lần đo gần đây thấp hơn khoảng theo dõi. Hãy đo lại đúng cách và chú ý các triệu chứng như chóng mặt hoặc mệt bất thường.',
+        _HealthInsight(
+          icon: _iconForAssessment(assessment),
+          color: _colorForAssessment(assessment),
+          title: assessment.title,
+          message: assessment.message,
         ),
       );
     }
 
-    if (latest.pulse != null && (latest.pulse! > 100 || latest.pulse! < 60)) {
+    if (abnormalCount >= 2) {
+      insights.add(
+        const _HealthInsight(
+          icon: Icons.monitor_heart_outlined,
+          color: Color(0xFFDC2626),
+          title: 'Nhiều lần đo gần đây cần chú ý',
+          message:
+              'Ít nhất 2 trong 3 lần đo gần đây có chỉ số ngoài mức theo dõi. Bác nên trao đổi với người thân hoặc nhân viên y tế.',
+        ),
+      );
+    }
+
+    if (BloodPressureAssessment.isPulseAbnormal(latest.pulse)) {
       insights.add(
         const _HealthInsight(
           icon: Icons.favorite_border_rounded,
@@ -246,16 +276,77 @@ class _HealthInsightsPageState extends State<HealthInsightsPage> {
     }
     return insights;
   }
-
-  bool _isHighPressure(HealthMeasurementHistoryItem item) =>
-      (item.systolic ?? 0) >= 140 || (item.diastolic ?? 0) >= 90;
-
-  bool _isLowPressure(HealthMeasurementHistoryItem item) =>
-      (item.systolic != null && item.systolic! < 90) ||
-      (item.diastolic != null && item.diastolic! < 60);
 }
 
 enum _HistoryRange { sevenDays, thirtyDays, all }
+
+const _normalGreen = Color(0xFF059669);
+const _alertRed = Color(0xFFDC2626);
+const _criticalRed = Color(0xFFB91C1C);
+
+Color _colorForAssessment(BloodPressureAssessment assessment) =>
+    assessment.isNormal
+    ? _normalGreen
+    : assessment.isCritical
+    ? _criticalRed
+    : _alertRed;
+
+IconData _iconForAssessment(BloodPressureAssessment assessment) =>
+    switch (assessment.level) {
+      BloodPressureLevel.normal => Icons.check_circle_outline_rounded,
+      BloodPressureLevel.low => Icons.south_rounded,
+      BloodPressureLevel.critical => Icons.priority_high_rounded,
+      BloodPressureLevel.unavailable => Icons.help_outline_rounded,
+      _ => Icons.warning_amber_rounded,
+    };
+
+class _CurrentReadingAlert extends StatelessWidget {
+  const _CurrentReadingAlert({required this.assessment, required this.pulse});
+
+  final BloodPressureAssessment assessment;
+  final int? pulse;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = _colorForAssessment(assessment);
+    final pulseWarning = BloodPressureAssessment.isPulseAbnormal(pulse);
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: .10),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: color.withValues(alpha: .34)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(_iconForAssessment(assessment), color: color, size: 28),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  assessment.title,
+                  style: TextStyle(color: color, fontWeight: FontWeight.w900),
+                ),
+                const SizedBox(height: 5),
+                Text(assessment.message, style: const TextStyle(height: 1.35)),
+                if (pulseWarning) ...[
+                  const SizedBox(height: 8),
+                  const Text(
+                    'Nhịp tim cũng đang ngoài mức 60-100 lần/phút. Bác hãy nghỉ và đo lại.',
+                    style: TextStyle(fontWeight: FontWeight.w700, height: 1.35),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
 
 class _RangeSelector extends StatelessWidget {
   const _RangeSelector({required this.value, required this.onChanged});
@@ -277,10 +368,15 @@ class _RangeSelector extends StatelessWidget {
 }
 
 class _SummaryCards extends StatelessWidget {
-  const _SummaryCards({required this.latest, required this.items});
+  const _SummaryCards({
+    required this.latest,
+    required this.items,
+    required this.assessment,
+  });
 
   final HealthMeasurementHistoryItem latest;
   final List<HealthMeasurementHistoryItem> items;
+  final BloodPressureAssessment assessment;
 
   @override
   Widget build(BuildContext context) {
@@ -306,7 +402,7 @@ class _SummaryCards extends StatelessWidget {
           label: 'Lần đo gần nhất',
           value: '${latest.systolic ?? '—'}/${latest.diastolic ?? '—'}',
           suffix: 'mmHg',
-          color: const Color(0xFF0F9EAA),
+          color: _colorForAssessment(assessment),
         ),
         _MetricCard(
           label: 'Trung bình',
@@ -463,17 +559,29 @@ class _HistoryRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final assessment = BloodPressureAssessment.evaluate(
+      systolic: item.systolic,
+      diastolic: item.diastolic,
+    );
+    final color = _colorForAssessment(assessment);
     final date = item.measuredAt.toLocal();
     final stamp =
         '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year} · ${date.hour.toString().padLeft(2, '0')}:${date.minute.toString().padLeft(2, '0')}';
     return ListTile(
       contentPadding: EdgeInsets.zero,
-      leading: const Icon(Icons.favorite_rounded, color: Color(0xFF0F9EAA)),
+      leading: Icon(
+        assessment.isNormal
+            ? Icons.check_circle_rounded
+            : _iconForAssessment(assessment),
+        color: color,
+      ),
       title: Text(
         '${item.systolic ?? '—'} / ${item.diastolic ?? '—'} mmHg',
-        style: const TextStyle(fontWeight: FontWeight.w800),
+        style: TextStyle(fontWeight: FontWeight.w800, color: color),
       ),
-      subtitle: Text('Nhịp tim ${item.pulse ?? '—'} · $stamp'),
+      subtitle: Text(
+        '${assessment.title} · Nhịp tim ${item.pulse ?? '—'} · $stamp',
+      ),
     );
   }
 }
@@ -636,7 +744,6 @@ class _VitalsChartPainter extends CustomPainter {
       ..strokeWidth = 2.5
       ..strokeCap = StrokeCap.round
       ..strokeJoin = StrokeJoin.round;
-    final dot = Paint()..color = color;
     final path = ui.Path();
     var started = false;
     for (var i = 0; i < values.length; i++) {
@@ -656,7 +763,15 @@ class _VitalsChartPainter extends CustomPainter {
       } else {
         path.lineTo(point.dx, point.dy);
       }
-      canvas.drawCircle(point, 3.5, dot);
+      final assessment = BloodPressureAssessment.evaluate(
+        systolic: items[i].systolic,
+        diastolic: items[i].diastolic,
+      );
+      canvas.drawCircle(
+        point,
+        3.5,
+        Paint()..color = _colorForAssessment(assessment),
+      );
     }
     canvas.drawPath(path, line);
   }

@@ -1267,7 +1267,7 @@ class _FeatureGrid extends StatelessWidget {
         return;
       }
       final first = contacts.first;
-      await EmergencyService.callNumber(first);
+      await EmergencyService.callNumber(first.phone);
       if (!context.mounted || contacts.length < 2) return;
       await showModalBottomSheet<void>(
         context: context,
@@ -1294,12 +1294,15 @@ class _FeatureGrid extends StatelessWidget {
                       backgroundColor: const Color(0xFFFFE6E3),
                       child: Text('${index + 1}'),
                     ),
-                    title: Text(contacts[index]),
+                    title: Text(contacts[index].displayName),
+                    subtitle: Text(contacts[index].phone),
                     trailing: const Icon(Icons.phone_forwarded_rounded),
                     onTap: () async {
                       Navigator.pop(sheetContext);
                       try {
-                        await EmergencyService.callNumber(contacts[index]);
+                        await EmergencyService.callNumber(
+                          contacts[index].phone,
+                        );
                       } catch (_) {
                         if (context.mounted) {
                           ScaffoldMessenger.of(context).showSnackBar(

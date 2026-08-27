@@ -22,7 +22,7 @@ class AccountProfileService {
 
   /// Makes sure every authenticated account can appear in the real contacts
   /// list and can be used as a chat participant.
-  Future<void> ensureCurrentProfile() async {
+  Future<void> ensureCurrentProfile({String? preferredName}) async {
     final user = client.auth.currentUser;
     if (user == null) return;
 
@@ -40,6 +40,7 @@ class AccountProfileService {
 
     final email = _first([user.email, _string(existing?['email'])]);
     final fullName = _first([
+      preferredName,
       _string(existing?['full_name']),
       _string(user.userMetadata?['full_name']),
       _string(user.userMetadata?['name']),

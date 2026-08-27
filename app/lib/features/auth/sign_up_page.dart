@@ -15,6 +15,7 @@ class SignUpPage extends StatefulWidget {
 
 class _SignUpPageState extends State<SignUpPage> {
   final _formKey = GlobalKey<FormState>();
+  final _nameController = TextEditingController();
   final _emailController = TextEditingController();
   final _phoneController = TextEditingController();
   final _passwordController = TextEditingController();
@@ -28,6 +29,7 @@ class _SignUpPageState extends State<SignUpPage> {
 
   @override
   void dispose() {
+    _nameController.dispose();
     _emailController.dispose();
     _phoneController.dispose();
     _passwordController.dispose();
@@ -39,6 +41,7 @@ class _SignUpPageState extends State<SignUpPage> {
     if (!_formKey.currentState!.validate()) return;
 
     final email = _emailController.text.trim().toLowerCase();
+    final name = _nameController.text.trim();
     final phone = _normalizePhone(_phoneController.text);
 
     setState(() {
@@ -50,7 +53,12 @@ class _SignUpPageState extends State<SignUpPage> {
       final response = await Supabase.instance.client.auth.signUp(
         email: email,
         password: _passwordController.text,
-        data: {'divie_role': _role.storageValue, 'phone_number': phone},
+        data: {
+          'full_name': name,
+          'name': name,
+          'divie_role': _role.storageValue,
+          'phone_number': phone,
+        },
       );
 
       if (!mounted) return;
@@ -60,7 +68,7 @@ class _SignUpPageState extends State<SignUpPage> {
       if (response.session != null) {
         await AccountProfileService(
           Supabase.instance.client,
-        ).ensureCurrentProfile();
+        ).ensureCurrentProfile(preferredName: name);
         await AppRoleStore().save(_role);
         await DeviceRegistrationService(
           client: Supabase.instance.client,
@@ -193,6 +201,25 @@ class _SignUpPageState extends State<SignUpPage> {
                           setState(() => _role = selected.first),
                     ),
                     const SizedBox(height: 24),
+                    TextFormField(
+                      controller: _nameController,
+                      textInputAction: TextInputAction.next,
+                      autofillHints: const [AutofillHints.name],
+                      decoration: _inputDecoration(
+                        'Tên tài khoản',
+                        Icons.person_outline_rounded,
+                      ),
+                      validator: (value) {
+                        if (value == null || value.trim().isEmpty) {
+                          return 'Nhập tên tài khoản.';
+                        }
+                        if (value.trim().length > 60) {
+                          return 'Tên tài khoản tối đa 60 ký tự.';
+                        }
+                        return null;
+                      },
+                    ),
+                    const SizedBox(height: 16),
                     TextFormField(
                       controller: _emailController,
                       keyboardType: TextInputType.emailAddress,

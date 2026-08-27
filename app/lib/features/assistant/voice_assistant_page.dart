@@ -98,6 +98,7 @@ class _VoiceAssistantPageState extends State<VoiceAssistantPage> {
   double _speechConfidence = 0;
   String _transcript = '';
   String _answer = '';
+  Timer? _answerHideTimer;
   ReminderDraft? _pendingReminder;
   _PendingVoiceMessage? _pendingMessage;
   final List<Map<String, String>> _conversation = [];
@@ -129,6 +130,7 @@ class _VoiceAssistantPageState extends State<VoiceAssistantPage> {
       await _submitCurrentTranscript();
       return;
     }
+    _answerHideTimer?.cancel();
     setState(() {
       _transcript = '';
       _answer = '';
@@ -315,7 +317,22 @@ class _VoiceAssistantPageState extends State<VoiceAssistantPage> {
       await _tts.speak(text);
     } catch (_) {
       // Voice playback must not turn a successful API/reminder action into an error.
+    } finally {
+      _hideEmbeddedAnswerAfterSpeech(value);
     }
+  }
+
+  void _hideEmbeddedAnswerAfterSpeech(String answer) {
+    if (!widget.embedded || answer.trim().isEmpty || _answer != answer) return;
+    _answerHideTimer?.cancel();
+    _answerHideTimer = Timer(const Duration(milliseconds: 800), () {
+      if (!mounted || _answer != answer) return;
+      if (_sending || _listening) {
+        _hideEmbeddedAnswerAfterSpeech(answer);
+        return;
+      }
+      setState(() => _answer = '');
+    });
   }
 
   String _enforceVoiceAddress(String value) => value
@@ -917,6 +934,7 @@ class _VoiceAssistantPageState extends State<VoiceAssistantPage> {
 
   @override
   void dispose() {
+    _answerHideTimer?.cancel();
     _speech.stop();
     _tts.stop();
     super.dispose();
@@ -1019,6 +1037,56 @@ class _VoiceAssistantPageState extends State<VoiceAssistantPage> {
             ),
             const SizedBox(height: 18),
           ],
+          AnimatedSwitcher(
+            duration: const Duration(milliseconds: 180),
+            child: _answer.isEmpty
+                ? const SizedBox.shrink()
+                : Semantics(
+                    liveRegion: true,
+                    child: Container(
+                      key: ValueKey(_answer),
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 12,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(16),
+                        boxShadow: const [
+                          BoxShadow(
+                            color: Color(0x1A0E7680),
+                            blurRadius: 12,
+                            offset: Offset(0, 4),
+                          ),
+                        ],
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'DiVie trả lời',
+                            style: TextStyle(
+                              color: DivieColors.teal,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            _answer,
+                            style: const TextStyle(
+                              color: DivieColors.navy,
+                              fontSize: 16,
+                              fontWeight: FontWeight.w700,
+                              height: 1.35,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+          ),
+          if (_answer.isNotEmpty) const SizedBox(height: 18),
           _VoiceWave(listening: _listening, processing: _sending),
           const SizedBox(height: 26),
           FloatingActionButton.large(

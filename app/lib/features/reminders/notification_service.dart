@@ -5,16 +5,63 @@ import 'package:timezone/timezone.dart' as tz;
 
 import 'reminder_model.dart';
 
+class ReminderNotificationStatus {
+  const ReminderNotificationStatus({
+    required this.notificationsEnabled,
+    required this.exactAlarmsAllowed,
+    required this.reminderChannelEnabled,
+    required this.pendingCount,
+  });
+
+  final bool notificationsEnabled;
+  final bool exactAlarmsAllowed;
+  final bool reminderChannelEnabled;
+  final int pendingCount;
+
+  bool get isReady => notificationsEnabled && reminderChannelEnabled;
+}
+
 class NotificationService {
   NotificationService._();
 
-  static const _channelId = 'medicine_reminders_alarm_v2';
+  // Android locks a channel's sound settings after its first creation. A new
+  // ID restores the audible alarm channel for devices that had the old one
+  // muted or created without the correct audio usage.
+  static const _channelId = 'medicine_reminders_alarm_v3';
   static const _channelName = 'Nhắc thuốc';
   static const _channelDescription = 'Thông báo nhắc uống thuốc có chuông';
 
   static final instance = NotificationService._();
   final _plugin = FlutterLocalNotificationsPlugin();
   Future<void>? _initialization;
+
+  AndroidNotificationChannel get _channel => AndroidNotificationChannel(
+    _channelId,
+    _channelName,
+    description: _channelDescription,
+    importance: Importance.max,
+    playSound: true,
+    enableVibration: true,
+    vibrationPattern: Int64List.fromList([0, 500, 260, 750]),
+    audioAttributesUsage: AudioAttributesUsage.alarm,
+  );
+
+  NotificationDetails get _notificationDetails => NotificationDetails(
+    android: AndroidNotificationDetails(
+      _channelId,
+      _channelName,
+      channelDescription: _channelDescription,
+      importance: Importance.max,
+      priority: Priority.max,
+      playSound: true,
+      enableVibration: true,
+      vibrationPattern: Int64List.fromList([0, 500, 260, 750]),
+      category: AndroidNotificationCategory.alarm,
+      audioAttributesUsage: AudioAttributesUsage.alarm,
+      visibility: NotificationVisibility.public,
+    ),
+    iOS: const DarwinNotificationDetails(),
+  );
 
   Future<void> initialize() => _initialization ??= _initialize();
 
@@ -34,15 +81,7 @@ class NotificationService {
           AndroidFlutterLocalNotificationsPlugin
         >();
     await androidPlugin?.requestNotificationsPermission();
-    await androidPlugin?.createNotificationChannel(
-      const AndroidNotificationChannel(
-        _channelId,
-        _channelName,
-        description: _channelDescription,
-        importance: Importance.max,
-        audioAttributesUsage: AudioAttributesUsage.alarm,
-      ),
-    );
+    await androidPlugin?.createNotificationChannel(_channel);
   }
 
   Future<void> schedule(MedicineReminder reminder) async {
@@ -66,20 +105,7 @@ class NotificationService {
         .resolvePlatformSpecificImplementation<
           AndroidFlutterLocalNotificationsPlugin
         >();
-    var scheduleMode = AndroidScheduleMode.inexactAllowWhileIdle;
-    try {
-      final canScheduleExactly = await androidPlugin
-          ?.canScheduleExactNotifications();
-      if (canScheduleExactly == false) {
-        await androidPlugin?.requestExactAlarmsPermission();
-      }
-      if (await androidPlugin?.canScheduleExactNotifications() == true) {
-        scheduleMode = AndroidScheduleMode.exactAllowWhileIdle;
-      }
-    } catch (_) {
-      // Android versions that do not expose this permission still receive an
-      // inexact reminder instead of failing to create the medicine schedule.
-    }
+    final scheduleMode = await _scheduleMode(androidPlugin);
     await _plugin.zonedSchedule(
       _notificationId(reminder.id),
       'Đến giờ uống thuốc',
@@ -87,18 +113,7 @@ class NotificationService {
           ? reminder.name
           : '${reminder.name} · ${reminder.note}',
       next,
-      const NotificationDetails(
-        android: AndroidNotificationDetails(
-          _channelId,
-          _channelName,
-          channelDescription: _channelDescription,
-          importance: Importance.max,
-          priority: Priority.high,
-          category: AndroidNotificationCategory.alarm,
-          audioAttributesUsage: AudioAttributesUsage.alarm,
-        ),
-        iOS: DarwinNotificationDetails(),
-      ),
+      _notificationDetails,
       androidScheduleMode: scheduleMode,
       matchDateTimeComponents: DateTimeComponents.time,
       payload: 'medicine:${reminder.id}',
@@ -126,18 +141,7 @@ class NotificationService {
         2147483646,
         'DiVie đã bật nhắc thuốc',
         'Đây là thông báo kiểm tra trên điện thoại này.',
-        const NotificationDetails(
-          android: AndroidNotificationDetails(
-            _channelId,
-            _channelName,
-            channelDescription: _channelDescription,
-            importance: Importance.max,
-            priority: Priority.high,
-            category: AndroidNotificationCategory.alarm,
-            audioAttributesUsage: AudioAttributesUsage.alarm,
-          ),
-          iOS: DarwinNotificationDetails(),
-        ),
+        _notificationDetails,
       );
       return true;
     } catch (error, stackTrace) {
@@ -160,12 +164,117 @@ class NotificationService {
       await androidPlugin.requestNotificationsPermission();
       enabled = await androidPlugin.areNotificationsEnabled();
     }
-    return enabled != false;
+    if (enabled == false) return false;
+    try {
+      final channels = await androidPlugin.getNotificationChannels();
+      final channel = channels
+          ?.where((item) => item.id == _channelId)
+          .firstOrNull;
+      return channel?.importance != Importance.none;
+    } catch (_) {
+      return true;
+    }
+  }
+
+  Future<bool> requestExactAlarmPermission() async {
+    await initialize();
+    final androidPlugin = _plugin
+        .resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin
+        >();
+    if (androidPlugin == null) return true;
+    try {
+      final allowed = await androidPlugin.canScheduleExactNotifications();
+      if (allowed != false) return true;
+      await androidPlugin.requestExactAlarmsPermission();
+      return await androidPlugin.canScheduleExactNotifications() == true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<ReminderNotificationStatus> status() async {
+    await initialize();
+    final androidPlugin = _plugin
+        .resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin
+        >();
+    if (androidPlugin == null) {
+      return ReminderNotificationStatus(
+        notificationsEnabled: true,
+        exactAlarmsAllowed: true,
+        reminderChannelEnabled: true,
+        pendingCount: (await _plugin.pendingNotificationRequests()).length,
+      );
+    }
+    final notificationsEnabled =
+        await androidPlugin.areNotificationsEnabled() != false;
+    final exactAlarmsAllowed =
+        await androidPlugin.canScheduleExactNotifications() != false;
+    var reminderChannelEnabled = true;
+    try {
+      final channels = await androidPlugin.getNotificationChannels();
+      final channel = channels
+          ?.where((item) => item.id == _channelId)
+          .firstOrNull;
+      reminderChannelEnabled = channel?.importance != Importance.none;
+    } catch (_) {
+      // Channel checks are unavailable on a few Android versions.
+    }
+    return ReminderNotificationStatus(
+      notificationsEnabled: notificationsEnabled,
+      exactAlarmsAllowed: exactAlarmsAllowed,
+      reminderChannelEnabled: reminderChannelEnabled,
+      pendingCount: (await _plugin.pendingNotificationRequests()).length,
+    );
+  }
+
+  Future<tz.TZDateTime?> scheduleTestAfterOneMinute() async {
+    try {
+      if (!await _ensureNotificationsEnabled()) return null;
+      await cancel(_testNotificationId);
+      final scheduledAt = tz.TZDateTime.now(
+        tz.local,
+      ).add(const Duration(minutes: 1));
+      final androidPlugin = _plugin
+          .resolvePlatformSpecificImplementation<
+            AndroidFlutterLocalNotificationsPlugin
+          >();
+      await _plugin.zonedSchedule(
+        _testNotificationId,
+        'DiVie đang kiểm tra nhắc thuốc',
+        'Nếu bác nghe được chuông này, nhắc thuốc đã hoạt động.',
+        scheduledAt,
+        _notificationDetails,
+        androidScheduleMode: await _scheduleMode(androidPlugin),
+        payload: 'medicine:test',
+      );
+      return scheduledAt;
+    } catch (error, stackTrace) {
+      debugPrint('DiVie scheduled notification test failed: $error');
+      debugPrintStack(stackTrace: stackTrace);
+      return null;
+    }
+  }
+
+  Future<AndroidScheduleMode> _scheduleMode(
+    AndroidFlutterLocalNotificationsPlugin? androidPlugin,
+  ) async {
+    try {
+      if (await androidPlugin?.canScheduleExactNotifications() == true) {
+        return AndroidScheduleMode.exactAllowWhileIdle;
+      }
+    } catch (_) {
+      // Devices without the exact-alarm API still receive an idle-safe alarm.
+    }
+    return AndroidScheduleMode.inexactAllowWhileIdle;
   }
 
   Future<void> cancel(int id) => _plugin.cancel(_notificationId(id));
 
   Future<void> cancelAll() => _plugin.cancelAll();
+
+  static const _testNotificationId = 2147483645;
 
   // Android notification IDs are 32-bit integers. Remote rows normally use a
   // small sequence, while offline/voice-created reminders use millisecond

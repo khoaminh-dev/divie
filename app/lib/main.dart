@@ -137,9 +137,6 @@ class _RoleGateState extends State<_RoleGate> {
     if (!SupabaseBootstrap.enabled) return;
 
     try {
-      if (role == AppRole.family) {
-        await NotificationService.instance.cancelAll();
-      }
       await DeviceRegistrationService(
         client: Supabase.instance.client,
       ).syncRole(role);
@@ -194,11 +191,7 @@ class _DivieShellState extends State<DivieShell> {
   @override
   void initState() {
     super.initState();
-    if (widget.role == AppRole.elder) {
-      unawaited(_syncReminders());
-    } else if (SupabaseBootstrap.enabled) {
-      unawaited(NotificationService.instance.cancelAll());
-    }
+    unawaited(_syncReminders());
     _subscribeReminderSync();
   }
 
@@ -240,11 +233,7 @@ class _DivieShellState extends State<DivieShell> {
   void didUpdateWidget(covariant DivieShell oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.role == widget.role) return;
-    if (widget.role == AppRole.elder) {
-      unawaited(_syncReminders());
-    } else if (SupabaseBootstrap.enabled) {
-      unawaited(NotificationService.instance.cancelAll());
-    }
+    unawaited(_syncReminders());
   }
 
   @override

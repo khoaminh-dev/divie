@@ -85,10 +85,8 @@ class _RemindersPageState extends State<RemindersPage> {
     try {
       final items = await _service.load();
       final statuses = await _service.loadStatuses(DateTime.now());
-      if (widget.role != AppRole.family) {
-        for (final item in items) {
-          await NotificationService.instance.trySchedule(item);
-        }
+      for (final item in items) {
+        await NotificationService.instance.trySchedule(item);
       }
       if (!mounted) return;
       setState(() {
@@ -115,9 +113,9 @@ class _RemindersPageState extends State<RemindersPage> {
     if (result == null) return;
     try {
       final created = await _service.create(result);
-      final notificationReady = widget.role == AppRole.family
-          ? true
-          : await NotificationService.instance.trySchedule(created);
+      final notificationReady = await NotificationService.instance.trySchedule(
+        created,
+      );
       if (!mounted) return;
       setState(() => _items = [..._items, created]..sort(_sortByTime));
       if (!notificationReady) {
@@ -214,17 +212,40 @@ class _RemindersPageState extends State<RemindersPage> {
   }
 
   Future<void> _testNotification() async {
-    final delivered = await NotificationService.instance.showTestNotification();
-    if (!mounted) return;
-    if (!delivered) {
+    final service = NotificationService.instance;
+    final before = await service.status();
+    if (!before.notificationsEnabled || !before.reminderChannelEnabled) {
       _showError(
-        'Hãy cho phép thông báo trong Cài đặt điện thoại rồi thử lại.',
+        'Hãy bật thông báo và âm thanh cho DiVie trong Cài đặt điện thoại.',
       );
       return;
     }
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(const SnackBar(content: Text('Đã gửi thông báo kiểm tra.')));
+    if (!before.exactAlarmsAllowed) {
+      final allowed = await service.requestExactAlarmPermission();
+      if (!allowed) {
+        _showError(
+          'Hãy cho phép “Báo thức và lời nhắc” cho DiVie rồi thử lại.',
+        );
+        return;
+      }
+    }
+    final scheduledAt = await service.scheduleTestAfterOneMinute();
+    if (!mounted) return;
+    if (scheduledAt == null) {
+      _showError(
+        'Chưa đặt được nhắc thử. Hãy kiểm tra quyền thông báo rồi thử lại.',
+      );
+      return;
+    }
+    final stamp =
+        '${scheduledAt.hour.toString().padLeft(2, '0')}:${scheduledAt.minute.toString().padLeft(2, '0')}';
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          'Đã đặt nhắc thử lúc $stamp. Hãy khóa màn hình và chờ chuông.',
+        ),
+      ),
+    );
   }
 
   @override

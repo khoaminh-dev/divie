@@ -5,10 +5,6 @@ enum AppRole { family, elder }
 extension AppRoleText on AppRole {
   String get label => this == AppRole.family ? 'Người thân' : 'Người cao tuổi';
 
-  String get description => this == AppRole.family
-      ? 'Cài đặt thuốc và theo dõi người thân.'
-      : 'Xem lịch uống thuốc và xác nhận đã uống.';
-
   String get storageValue => this == AppRole.family ? 'family' : 'elder';
 
   static AppRole? fromStorage(String? value) {

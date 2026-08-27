@@ -1743,7 +1743,6 @@ class _RoleSettingTile extends StatelessWidget {
                     color: DivieColors.teal,
                   ),
                   title: Text(value.label),
-                  subtitle: Text(value.description),
                   trailing: value == role
                       ? const Icon(Icons.check_circle, color: DivieColors.teal)
                       : null,

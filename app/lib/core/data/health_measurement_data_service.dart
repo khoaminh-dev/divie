@@ -157,4 +157,25 @@ class HealthMeasurementDataService {
     );
     return item;
   }
+
+  Future<void> delete(HealthMeasurementHistoryItem item) async {
+    if (isRemote) {
+      await client!
+          .from('health_measurement_sessions')
+          .delete()
+          .eq('id', item.id)
+          .eq('user_id', _ownerId);
+      return;
+    }
+
+    final prefs = await SharedPreferences.getInstance();
+    final current = prefs.getStringList(_localKey) ?? const <String>[];
+    await prefs.setStringList(
+      _localKey,
+      current.where((entry) {
+        final value = jsonDecode(entry);
+        return value is! Map<String, dynamic> || value['id'] != item.id;
+      }).toList(),
+    );
+  }
 }

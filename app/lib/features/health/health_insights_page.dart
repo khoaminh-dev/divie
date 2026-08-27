@@ -55,6 +55,47 @@ class _HealthInsightsPageState extends State<HealthInsightsPage> {
     }
   }
 
+  Future<void> _deleteMeasurement(HealthMeasurementHistoryItem item) async {
+    final shouldDelete = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Xóa lần đo này?'),
+        content: const Text(
+          'Chỉ xóa kết quả đọc nhầm hoặc không muốn lưu. Thao tác này không thể hoàn tác.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Giữ lại'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            style: FilledButton.styleFrom(backgroundColor: _alertRed),
+            child: const Text('Xóa'),
+          ),
+        ],
+      ),
+    );
+    if (shouldDelete != true || !mounted) return;
+    try {
+      await _service.delete(item);
+      if (!mounted) return;
+      setState(
+        () => _items = _items.where((value) => value.id != item.id).toList(),
+      );
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Đã xóa lần đo khỏi lịch sử.')),
+      );
+    } catch (error, stackTrace) {
+      debugPrint('DiVie health measurement delete failed: $error');
+      debugPrintStack(stackTrace: stackTrace);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Chưa xóa được lần đo. Hãy thử lại.')),
+      );
+    }
+  }
+
   List<HealthMeasurementHistoryItem> get _filteredItems {
     final now = DateTime.now();
     final since = switch (_range) {
@@ -188,7 +229,12 @@ class _HealthInsightsPageState extends State<HealthInsightsPage> {
                       subtitle: '${items.length} lần đo trong khoảng đã chọn',
                       child: Column(
                         children: items.reversed
-                            .map((item) => _HistoryRow(item: item))
+                            .map(
+                              (item) => _HistoryRow(
+                                item: item,
+                                onDelete: () => _deleteMeasurement(item),
+                              ),
+                            )
                             .toList(),
                       ),
                     ),
@@ -281,12 +327,15 @@ class _HealthInsightsPageState extends State<HealthInsightsPage> {
 enum _HistoryRange { sevenDays, thirtyDays, all }
 
 const _normalGreen = Color(0xFF059669);
+const _watchAmber = Color(0xFFD97706);
 const _alertRed = Color(0xFFDC2626);
 const _criticalRed = Color(0xFFB91C1C);
 
 Color _colorForAssessment(BloodPressureAssessment assessment) =>
     assessment.isNormal
     ? _normalGreen
+    : assessment.level == BloodPressureLevel.elevated
+    ? _watchAmber
     : assessment.isCritical
     ? _criticalRed
     : _alertRed;
@@ -553,9 +602,10 @@ class _InsightTile extends StatelessWidget {
 }
 
 class _HistoryRow extends StatelessWidget {
-  const _HistoryRow({required this.item});
+  const _HistoryRow({required this.item, required this.onDelete});
 
   final HealthMeasurementHistoryItem item;
+  final VoidCallback onDelete;
 
   @override
   Widget build(BuildContext context) {
@@ -581,6 +631,11 @@ class _HistoryRow extends StatelessWidget {
       ),
       subtitle: Text(
         '${assessment.title} · Nhịp tim ${item.pulse ?? '—'} · $stamp',
+      ),
+      trailing: IconButton(
+        tooltip: 'Xóa lần đo',
+        onPressed: onDelete,
+        icon: const Icon(Icons.delete_outline_rounded),
       ),
     );
   }

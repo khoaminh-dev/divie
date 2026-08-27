@@ -153,6 +153,38 @@ class NotificationService {
     }
   }
 
+  /// Schedules one additional reminder without changing the daily reminder.
+  /// This is used when the elder taps "Để sau" for today's dose.
+  Future<tz.TZDateTime?> snooze(MedicineReminder reminder) async {
+    try {
+      if (!await _ensureNotificationsEnabled()) return null;
+      await _plugin.cancel(_snoozeNotificationId(reminder.id));
+      final scheduledAt = tz.TZDateTime.now(
+        tz.local,
+      ).add(const Duration(minutes: 10));
+      final androidPlugin = _plugin
+          .resolvePlatformSpecificImplementation<
+            AndroidFlutterLocalNotificationsPlugin
+          >();
+      await _plugin.zonedSchedule(
+        _snoozeNotificationId(reminder.id),
+        'Nhắc lại uống thuốc',
+        reminder.note.isEmpty
+            ? reminder.name
+            : '${reminder.name} · ${reminder.note}',
+        scheduledAt,
+        _notificationDetails,
+        androidScheduleMode: await _scheduleMode(androidPlugin),
+        payload: 'medicine:snooze:${reminder.id}',
+      );
+      return scheduledAt;
+    } catch (error, stackTrace) {
+      debugPrint('DiVie reminder snooze failed: $error');
+      debugPrintStack(stackTrace: stackTrace);
+      return null;
+    }
+  }
+
   Future<bool> _ensureNotificationsEnabled() async {
     await initialize();
     final androidPlugin = _plugin
@@ -274,6 +306,9 @@ class NotificationService {
 
   Future<void> cancel(int id) => _plugin.cancel(_notificationId(id));
 
+  Future<void> cancelSnooze(int id) =>
+      _plugin.cancel(_snoozeNotificationId(id));
+
   Future<void> cancelAll() => _plugin.cancelAll();
 
   static const _testNotificationId = 2147483645;
@@ -284,5 +319,10 @@ class NotificationService {
   int _notificationId(int id) {
     final normalized = id.abs().remainder(2147483647);
     return normalized == 0 ? 1 : normalized;
+  }
+
+  int _snoozeNotificationId(int id) {
+    final normalized = id.abs().remainder(1073741823);
+    return 1073741824 + normalized;
   }
 }

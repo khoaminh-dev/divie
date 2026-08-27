@@ -70,7 +70,7 @@ class _HealthCapturePageState extends State<HealthCapturePage> {
       });
       final bytes = await image.readAsBytes();
       if (mounted) setState(() => _imageBytes = bytes);
-      if (continueAutomatically) await _scan(saveAndOpenInsights: true);
+      if (continueAutomatically) await _scan();
     } catch (_) {
       if (mounted) {
         setState(
@@ -82,7 +82,7 @@ class _HealthCapturePageState extends State<HealthCapturePage> {
     }
   }
 
-  Future<void> _scan({bool saveAndOpenInsights = false}) async {
+  Future<void> _scan() async {
     final image = _image;
     if (image == null) return;
     setState(() {
@@ -100,7 +100,6 @@ class _HealthCapturePageState extends State<HealthCapturePage> {
         throw StateError('empty_reading');
       }
       if (mounted) setState(() => _reading = result);
-      if (saveAndOpenInsights) await _saveReading(openInsights: true);
     } catch (_) {
       if (mounted) {
         setState(
@@ -218,12 +217,12 @@ class _HealthCapturePageState extends State<HealthCapturePage> {
           const SizedBox(height: 12),
           if (_busy)
             const _CaptureProgress(
-              title: 'Đang đọc và lưu chỉ số',
-              detail: 'Sau đó DiVie sẽ mở biểu đồ sức khỏe.',
+              title: 'Đang đọc chỉ số',
+              detail: 'Bác hãy kiểm tra rồi xác nhận trước khi lưu.',
             )
           else if (_image != null)
             FilledButton.icon(
-              onPressed: () => _scan(saveAndOpenInsights: true),
+              onPressed: _scan,
               icon: const Icon(Icons.document_scanner),
               label: const Text('Đọc ảnh này'),
             ),

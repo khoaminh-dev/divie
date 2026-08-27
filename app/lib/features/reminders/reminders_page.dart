@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:timezone/timezone.dart' as tz;
 
 import '../../core/auth/supabase_bootstrap.dart';
 import '../../core/data/reminder_data_service.dart';
@@ -26,6 +27,7 @@ class _RemindersPageState extends State<RemindersPage> {
   late final ReminderDataService _service;
   List<MedicineReminder> _items = [];
   Map<int, String> _statuses = {};
+  final Set<int> _statusSavingIds = {};
   bool _loading = true;
   String? _error;
   RealtimeChannel? _realtimeChannel;
@@ -191,16 +193,52 @@ class _RemindersPageState extends State<RemindersPage> {
   }
 
   Future<void> _markStatus(MedicineReminder item, String status) async {
+    if (_statusSavingIds.contains(item.id)) return;
+    final previousStatus = _statuses[item.id];
+    setState(() {
+      _statusSavingIds.add(item.id);
+      _statuses = {..._statuses, item.id: status};
+    });
     try {
       await _service.recordStatus(
         reminder: item,
         day: DateTime.now(),
         status: status,
       );
+      tz.TZDateTime? snoozedUntil;
+      if (status == 'snoozed') {
+        snoozedUntil = await NotificationService.instance.snooze(item);
+        if (snoozedUntil == null) {
+          _showError('Đã để sau, nhưng máy chưa đặt được chuông nhắc lại.');
+        }
+      } else {
+        await NotificationService.instance.cancelSnooze(item.id);
+      }
       if (!mounted) return;
-      setState(() => _statuses = {..._statuses, item.id: status});
-    } catch (_) {
+      final message = switch (status) {
+        'taken' => 'Đã ghi nhận bác đã uống thuốc.',
+        'skipped' => 'Đã bỏ qua lịch thuốc hôm nay.',
+        'snoozed' when snoozedUntil != null =>
+          'DiVie sẽ nhắc lại lúc ${snoozedUntil.hour.toString().padLeft(2, '0')}:${snoozedUntil.minute.toString().padLeft(2, '0')}.',
+        _ => 'Đã cập nhật lịch thuốc.',
+      };
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(message)));
+    } catch (error, stackTrace) {
+      debugPrint('DiVie reminder status update failed: $error');
+      debugPrintStack(stackTrace: stackTrace);
+      if (!mounted) return;
+      setState(() {
+        if (previousStatus == null) {
+          _statuses = Map.of(_statuses)..remove(item.id);
+        } else {
+          _statuses = {..._statuses, item.id: previousStatus};
+        }
+      });
       _showError('Không đồng bộ được trạng thái uống thuốc.');
+    } finally {
+      if (mounted) setState(() => _statusSavingIds.remove(item.id));
     }
   }
 
@@ -302,6 +340,7 @@ class _RemindersPageState extends State<RemindersPage> {
                     : _ElderReminderCard(
                         item: _items[index],
                         status: _statuses[_items[index].id],
+                        saving: _statusSavingIds.contains(_items[index].id),
                         onStatus: (status) =>
                             _markStatus(_items[index], status),
                       ),
@@ -382,16 +421,20 @@ class _ElderReminderCard extends StatelessWidget {
   const _ElderReminderCard({
     required this.item,
     required this.status,
+    required this.saving,
     required this.onStatus,
   });
 
   final MedicineReminder item;
   final String? status;
+  final bool saving;
   final ValueChanged<String> onStatus;
 
   @override
   Widget build(BuildContext context) {
-    final completed = status == 'taken';
+    final completed = status == 'taken' || status == 'skipped';
+    final skipped = status == 'skipped';
+    final snoozed = status == 'snoozed';
     return Card(
       elevation: 0,
       color: Colors.white,
@@ -434,36 +477,54 @@ class _ElderReminderCard extends StatelessWidget {
                   ),
                 ),
                 if (completed)
-                  const Chip(
-                    label: Text('Đã uống'),
-                    avatar: Icon(Icons.check, size: 16),
+                  Chip(
+                    label: Text(skipped ? 'Đã bỏ qua' : 'Đã uống'),
+                    avatar: Icon(
+                      skipped ? Icons.close_rounded : Icons.check,
+                      size: 16,
+                    ),
                     backgroundColor: Color(0xFFDDF8E9),
                   ),
               ],
             ),
             if (!completed) ...[
               const SizedBox(height: 14),
+              if (snoozed) ...[
+                const Text(
+                  'DiVie sẽ nhắc lại sau ít phút.',
+                  style: TextStyle(color: _teal, fontWeight: FontWeight.w700),
+                ),
+                const SizedBox(height: 10),
+              ],
               Row(
                 children: [
                   Expanded(
                     child: FilledButton.icon(
-                      onPressed: () => onStatus('taken'),
+                      onPressed: saving ? null : () => onStatus('taken'),
                       icon: const Icon(Icons.check),
                       label: const Text('Đã uống'),
                     ),
                   ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: OutlinedButton(
-                      onPressed: () => onStatus('snoozed'),
-                      child: const Text('Để sau'),
+                  if (!snoozed) ...[
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: saving ? null : () => onStatus('snoozed'),
+                        child: const Text('Để sau'),
+                      ),
                     ),
-                  ),
+                  ],
                   const SizedBox(width: 8),
                   IconButton(
-                    onPressed: () => onStatus('skipped'),
+                    onPressed: saving ? null : () => onStatus('skipped'),
                     tooltip: 'Bỏ qua',
-                    icon: const Icon(Icons.close_rounded),
+                    icon: saving
+                        ? const SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.close_rounded),
                   ),
                 ],
               ),

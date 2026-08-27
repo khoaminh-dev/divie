@@ -7,7 +7,6 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../core/auth/supabase_bootstrap.dart';
 import '../../core/data/health_measurement_data_service.dart';
-import 'health_insights_page.dart';
 import 'ocr_service.dart';
 
 class HealthCapturePage extends StatefulWidget {
@@ -112,9 +111,8 @@ class _HealthCapturePageState extends State<HealthCapturePage> {
     }
   }
 
-  Future<void> _saveReading({bool openInsights = false}) async {
-    final reading = _reading;
-    if (reading == null || _saving) return;
+  Future<void> _saveReading(BloodPressureReading reading) async {
+    if (_saving) return;
     setState(() {
       _saving = true;
       _error = null;
@@ -125,15 +123,9 @@ class _HealthCapturePageState extends State<HealthCapturePage> {
       setState(() {
         _saving = false;
       });
-      if (openInsights) {
-        Navigator.of(context).pushReplacement(
-          MaterialPageRoute(builder: (_) => const HealthInsightsPage()),
-        );
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Đã lưu chỉ số vào lịch sử sức khỏe.')),
-        );
-      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Đã lưu chỉ số vào lịch sử sức khỏe.')),
+      );
     } catch (_) {
       if (!mounted) return;
       setState(() {
@@ -287,15 +279,76 @@ class _CaptureProgress extends StatelessWidget {
   );
 }
 
-class _ReadingCard extends StatelessWidget {
+class _ReadingCard extends StatefulWidget {
   const _ReadingCard({
     required this.reading,
     required this.saving,
     required this.onSave,
   });
+
   final BloodPressureReading reading;
   final bool saving;
-  final VoidCallback onSave;
+  final ValueChanged<BloodPressureReading> onSave;
+
+  @override
+  State<_ReadingCard> createState() => _ReadingCardState();
+}
+
+class _ReadingCardState extends State<_ReadingCard> {
+  late final TextEditingController _systolic;
+  late final TextEditingController _diastolic;
+  late final TextEditingController _pulse;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _systolic = TextEditingController(text: _value(widget.reading.systolic));
+    _diastolic = TextEditingController(text: _value(widget.reading.diastolic));
+    _pulse = TextEditingController(text: _value(widget.reading.pulse));
+  }
+
+  @override
+  void dispose() {
+    _systolic.dispose();
+    _diastolic.dispose();
+    _pulse.dispose();
+    super.dispose();
+  }
+
+  String _value(int? value) => value?.toString() ?? '';
+
+  void _confirm() {
+    final systolic = int.tryParse(_systolic.text.trim());
+    final diastolic = int.tryParse(_diastolic.text.trim());
+    final pulseText = _pulse.text.trim();
+    final pulse = pulseText.isEmpty ? null : int.tryParse(pulseText);
+    final invalid =
+        systolic == null ||
+        diastolic == null ||
+        systolic < 50 ||
+        systolic > 260 ||
+        diastolic < 30 ||
+        diastolic > 180 ||
+        systolic <= diastolic ||
+        (pulseText.isNotEmpty && (pulse == null || pulse < 25 || pulse > 240));
+    if (invalid) {
+      setState(() {
+        _error = 'Bác kiểm tra lại các số trên máy đo trước khi lưu.';
+      });
+      return;
+    }
+    widget.onSave(
+      BloodPressureReading(
+        systolic: systolic,
+        diastolic: diastolic,
+        pulse: pulse,
+        confidence: widget.reading.confidence,
+        rawText: widget.reading.rawText,
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) => Card(
     elevation: 0,
@@ -308,21 +361,87 @@ class _ReadingCard extends StatelessWidget {
             'Kết quả đọc được · hãy xác nhận',
             style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900),
           ),
-          const SizedBox(height: 16),
-          Text(
-            'Huyết áp: ${reading.systolic ?? '—'} / ${reading.diastolic ?? '—'} mmHg',
-            style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
+          const SizedBox(height: 6),
+          const Text(
+            'Kiểm tra với màn hình máy đo. Bác có thể sửa số trước khi lưu.',
+            style: TextStyle(color: Color(0xFF668092)),
           ),
-          Text('Nhịp tim: ${reading.pulse ?? '—'} lần/phút'),
-          if (reading.confidence != null)
-            Text('Độ chắc chắn OCR: ${(reading.confidence! * 100).round()}%'),
+          const SizedBox(height: 14),
+          Row(
+            children: [
+              Expanded(
+                child: _ReadingField(
+                  controller: _systolic,
+                  label: 'Tâm thu',
+                  suffix: 'mmHg',
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _ReadingField(
+                  controller: _diastolic,
+                  label: 'Tâm trương',
+                  suffix: 'mmHg',
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          _ReadingField(
+            controller: _pulse,
+            label: 'Nhịp tim',
+            suffix: 'lần/phút',
+          ),
+          if (_error != null) ...[
+            const SizedBox(height: 10),
+            Text(
+              _error!,
+              style: const TextStyle(
+                color: Colors.red,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ],
+          if (widget.reading.confidence != null) ...[
+            const SizedBox(height: 10),
+            Text(
+              'Độ chắc chắn OCR: ${(widget.reading.confidence! * 100).round()}%',
+              style: const TextStyle(color: Color(0xFF668092)),
+            ),
+          ],
           const SizedBox(height: 14),
           FilledButton(
-            onPressed: saving ? null : onSave,
-            child: Text(saving ? 'Đang lưu…' : 'Xác nhận lưu'),
+            onPressed: widget.saving ? null : _confirm,
+            child: Text(widget.saving ? 'Đang lưu…' : 'Xác nhận lưu'),
           ),
         ],
       ),
+    ),
+  );
+}
+
+class _ReadingField extends StatelessWidget {
+  const _ReadingField({
+    required this.controller,
+    required this.label,
+    required this.suffix,
+  });
+
+  final TextEditingController controller;
+  final String label;
+  final String suffix;
+
+  @override
+  Widget build(BuildContext context) => TextField(
+    controller: controller,
+    keyboardType: TextInputType.number,
+    style: const TextStyle(fontSize: 21, fontWeight: FontWeight.w800),
+    decoration: InputDecoration(
+      labelText: label,
+      suffixText: suffix,
+      filled: true,
+      fillColor: const Color(0xFFF7FBFC),
+      border: const OutlineInputBorder(),
     ),
   );
 }

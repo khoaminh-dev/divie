@@ -27,7 +27,7 @@ class NotificationService {
   // Android locks a channel's sound settings after its first creation. A new
   // ID restores the audible alarm channel for devices that had the old one
   // muted or created without the correct audio usage.
-  static const _channelId = 'medicine_reminders_alarm_v3';
+  static const _channelId = 'medicine_reminders_alarm_v4';
   static const _channelName = 'Nhắc thuốc';
   static const _channelDescription = 'Thông báo nhắc uống thuốc có chuông';
 
@@ -41,6 +41,7 @@ class NotificationService {
     description: _channelDescription,
     importance: Importance.max,
     playSound: true,
+    sound: const RawResourceAndroidNotificationSound('divie_alarm'),
     enableVibration: true,
     vibrationPattern: Int64List.fromList([0, 500, 260, 750]),
     audioAttributesUsage: AudioAttributesUsage.alarm,
@@ -54,6 +55,7 @@ class NotificationService {
       importance: Importance.max,
       priority: Priority.max,
       playSound: true,
+      sound: const RawResourceAndroidNotificationSound('divie_alarm'),
       enableVibration: true,
       vibrationPattern: Int64List.fromList([0, 500, 260, 750]),
       category: AndroidNotificationCategory.alarm,

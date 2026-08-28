@@ -6,6 +6,7 @@ import 'package:timezone/timezone.dart' as tz;
 
 import '../../core/auth/supabase_bootstrap.dart';
 import '../../core/data/reminder_data_service.dart';
+import '../../core/device/android_launcher_service.dart';
 import '../../core/roles/app_role.dart';
 import 'notification_service.dart';
 import 'reminder_model.dart';
@@ -251,14 +252,21 @@ class _RemindersPageState extends State<RemindersPage> {
 
   Future<void> _testNotification() async {
     final service = NotificationService.instance;
-    final before = await service.status();
-    if (!before.notificationsEnabled || !before.reminderChannelEnabled) {
-      _showError(
-        'Hãy bật thông báo và âm thanh cho DiVie trong Cài đặt điện thoại.',
-      );
+    var status = await service.status();
+    if (!status.notificationsEnabled) {
+      final granted = await service.requestNotificationsPermission();
+      status = await service.status();
+      if (!granted || !status.notificationsEnabled) {
+        if (!mounted) return;
+        await _showNotificationSettingsDialog(channelDisabled: false);
+        return;
+      }
+    }
+    if (!status.reminderChannelEnabled) {
+      await _showNotificationSettingsDialog(channelDisabled: true);
       return;
     }
-    if (!before.exactAlarmsAllowed) {
+    if (!status.exactAlarmsAllowed) {
       final allowed = await service.requestExactAlarmPermission();
       if (!allowed) {
         _showError(
@@ -284,6 +292,39 @@ class _RemindersPageState extends State<RemindersPage> {
         ),
       ),
     );
+  }
+
+  Future<void> _showNotificationSettingsDialog({
+    required bool channelDisabled,
+  }) async {
+    final openSettings = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(
+          channelDisabled
+              ? 'Kênh Nhắc thuốc đang tắt'
+              : 'Thông báo DiVie đang tắt',
+        ),
+        content: Text(
+          channelDisabled
+              ? 'Trong Cài đặt thông báo của DiVie, hãy mở mục “Nhắc thuốc”, rồi bật thông báo và âm thanh.'
+              : 'Hãy bật “Cho phép thông báo” cho DiVie. Sau đó quay lại đây và bấm nút chuông để kiểm tra lại.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Để sau'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Mở cài đặt'),
+          ),
+        ],
+      ),
+    );
+    if (openSettings == true) {
+      await AndroidLauncherService.openNotificationSettings();
+    }
   }
 
   @override

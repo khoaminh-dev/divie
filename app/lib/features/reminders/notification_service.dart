@@ -82,7 +82,6 @@ class NotificationService {
         .resolvePlatformSpecificImplementation<
           AndroidFlutterLocalNotificationsPlugin
         >();
-    await androidPlugin?.requestNotificationsPermission();
     await androidPlugin?.createNotificationChannel(_channel);
   }
 
@@ -186,19 +185,12 @@ class NotificationService {
   }
 
   Future<bool> _ensureNotificationsEnabled() async {
-    await initialize();
+    if (!await requestNotificationsPermission()) return false;
     final androidPlugin = _plugin
         .resolvePlatformSpecificImplementation<
           AndroidFlutterLocalNotificationsPlugin
         >();
     if (androidPlugin == null) return true;
-
-    var enabled = await androidPlugin.areNotificationsEnabled();
-    if (enabled == false) {
-      await androidPlugin.requestNotificationsPermission();
-      enabled = await androidPlugin.areNotificationsEnabled();
-    }
-    if (enabled == false) return false;
     try {
       final channels = await androidPlugin.getNotificationChannels();
       final channel = channels
@@ -208,6 +200,18 @@ class NotificationService {
     } catch (_) {
       return true;
     }
+  }
+
+  Future<bool> requestNotificationsPermission() async {
+    await initialize();
+    final androidPlugin = _plugin
+        .resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin
+        >();
+    if (androidPlugin == null) return true;
+    if (await androidPlugin.areNotificationsEnabled() != false) return true;
+    await androidPlugin.requestNotificationsPermission();
+    return await androidPlugin.areNotificationsEnabled() != false;
   }
 
   Future<bool> requestExactAlarmPermission() async {

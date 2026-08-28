@@ -18,4 +18,13 @@ class AndroidLauncherService {
       return false;
     }
   }
+
+  static Future<bool> openNotificationSettings() async {
+    try {
+      return await _channel.invokeMethod<bool>('openNotificationSettings') ??
+          false;
+    } catch (_) {
+      return false;
+    }
+  }
 }

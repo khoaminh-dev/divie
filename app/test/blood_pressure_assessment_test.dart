@@ -50,5 +50,13 @@ void main() {
       expect(BloodPressureAssessment.isPulseAbnormal(101), isTrue);
       expect(BloodPressureAssessment.isPulseAbnormal(70), isFalse);
     });
+
+    test('groups heart rate into healthy, attention and danger levels', () {
+      expect(HeartRateAssessment.evaluate(72).level, HeartRateLevel.healthy);
+      expect(HeartRateAssessment.evaluate(55).level, HeartRateLevel.attention);
+      expect(HeartRateAssessment.evaluate(110).level, HeartRateLevel.attention);
+      expect(HeartRateAssessment.evaluate(45).level, HeartRateLevel.danger);
+      expect(HeartRateAssessment.evaluate(125).level, HeartRateLevel.danger);
+    });
   });
 }

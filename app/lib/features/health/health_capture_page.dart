@@ -7,6 +7,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../core/auth/supabase_bootstrap.dart';
 import '../../core/data/health_measurement_data_service.dart';
+import 'health_insights_page.dart';
 import 'ocr_service.dart';
 
 class HealthCapturePage extends StatefulWidget {
@@ -69,7 +70,7 @@ class _HealthCapturePageState extends State<HealthCapturePage> {
       });
       final bytes = await image.readAsBytes();
       if (mounted) setState(() => _imageBytes = bytes);
-      if (continueAutomatically) await _scan();
+      if (continueAutomatically) await _scan(saveAndOpenInsights: true);
     } catch (_) {
       if (mounted) {
         setState(
@@ -81,7 +82,7 @@ class _HealthCapturePageState extends State<HealthCapturePage> {
     }
   }
 
-  Future<void> _scan() async {
+  Future<void> _scan({bool saveAndOpenInsights = false}) async {
     final image = _image;
     if (image == null) return;
     setState(() {
@@ -99,6 +100,9 @@ class _HealthCapturePageState extends State<HealthCapturePage> {
         throw StateError('empty_reading');
       }
       if (mounted) setState(() => _reading = result);
+      if (saveAndOpenInsights) {
+        await _saveReading(result, openInsights: true);
+      }
     } catch (_) {
       if (mounted) {
         setState(
@@ -111,7 +115,10 @@ class _HealthCapturePageState extends State<HealthCapturePage> {
     }
   }
 
-  Future<void> _saveReading(BloodPressureReading reading) async {
+  Future<void> _saveReading(
+    BloodPressureReading reading, {
+    bool openInsights = false,
+  }) async {
     if (_saving) return;
     setState(() {
       _saving = true;
@@ -123,6 +130,12 @@ class _HealthCapturePageState extends State<HealthCapturePage> {
       setState(() {
         _saving = false;
       });
+      if (openInsights) {
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(builder: (_) => const HealthInsightsPage()),
+        );
+        return;
+      }
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Đã lưu chỉ số vào lịch sử sức khỏe.')),
       );
@@ -209,12 +222,12 @@ class _HealthCapturePageState extends State<HealthCapturePage> {
           const SizedBox(height: 12),
           if (_busy)
             const _CaptureProgress(
-              title: 'Đang đọc chỉ số',
-              detail: 'Bác hãy kiểm tra rồi xác nhận trước khi lưu.',
+              title: 'Đang đọc và lưu chỉ số',
+              detail: 'DiVie sẽ mở biểu đồ ngay sau khi đọc xong.',
             )
           else if (_image != null)
             FilledButton.icon(
-              onPressed: _scan,
+              onPressed: () => _scan(saveAndOpenInsights: true),
               icon: const Icon(Icons.document_scanner),
               label: const Text('Đọc ảnh này'),
             ),

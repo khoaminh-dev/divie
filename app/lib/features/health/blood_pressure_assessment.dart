@@ -1,5 +1,56 @@
 enum BloodPressureLevel { unavailable, normal, elevated, high, critical, low }
 
+enum HeartRateLevel { unavailable, healthy, attention, danger }
+
+class HeartRateAssessment {
+  const HeartRateAssessment({
+    required this.level,
+    required this.title,
+    required this.message,
+  });
+
+  final HeartRateLevel level;
+  final String title;
+  final String message;
+
+  bool get isHealthy => level == HeartRateLevel.healthy;
+  bool get needsAttention =>
+      level == HeartRateLevel.attention || level == HeartRateLevel.danger;
+  bool get isDanger => level == HeartRateLevel.danger;
+
+  static HeartRateAssessment evaluate(int? pulse) {
+    if (pulse == null) {
+      return const HeartRateAssessment(
+        level: HeartRateLevel.unavailable,
+        title: 'Chưa có nhịp tim',
+        message: 'DiVie chưa đọc được nhịp tim từ lần đo này.',
+      );
+    }
+    if (pulse < 50 || pulse > 120) {
+      return const HeartRateAssessment(
+        level: HeartRateLevel.danger,
+        title: 'Nhịp tim cần chú ý ngay',
+        message:
+            'Bác hãy ngồi nghỉ và đo lại khi cơ thể thư giãn. Nếu kèm đau ngực, khó thở, choáng hoặc ngất, hãy nhờ hỗ trợ y tế ngay.',
+      );
+    }
+    if (pulse < 60 || pulse > 100) {
+      return const HeartRateAssessment(
+        level: HeartRateLevel.attention,
+        title: 'Nhịp tim cần theo dõi',
+        message:
+            'Bác nên nghỉ vài phút rồi đo lại. Nếu chỉ số lặp lại hoặc thấy không khỏe, hãy trao đổi với người thân hoặc nhân viên y tế.',
+      );
+    }
+    return const HeartRateAssessment(
+      level: HeartRateLevel.healthy,
+      title: 'Nhịp tim trong mức khỏe',
+      message:
+          'Nhịp tim ở lần đo này nằm trong khoảng theo dõi 60–100 lần/phút.',
+    );
+  }
+}
+
 class BloodPressureAssessment {
   const BloodPressureAssessment({
     required this.level,
@@ -81,5 +132,5 @@ class BloodPressureAssessment {
   }
 
   static bool isPulseAbnormal(int? pulse) =>
-      pulse != null && (pulse < 60 || pulse > 100);
+      HeartRateAssessment.evaluate(pulse).needsAttention;
 }

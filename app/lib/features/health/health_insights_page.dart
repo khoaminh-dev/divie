@@ -129,6 +129,9 @@ class _HealthInsightsPageState extends State<HealthInsightsPage> {
             systolic: latest.systolic,
             diastolic: latest.diastolic,
           );
+    final latestHeartRate = latest == null
+        ? null
+        : HeartRateAssessment.evaluate(latest.pulse);
     final insights = _buildInsights(items);
 
     return Scaffold(
@@ -184,19 +187,26 @@ class _HealthInsightsPageState extends State<HealthInsightsPage> {
                       latest: latest!,
                       items: items,
                       assessment: latestAssessment!,
+                      heartRate: latestHeartRate!,
                     ),
-                    if (latestAssessment.isAbnormal) ...[
+                    const SizedBox(height: 16),
+                    _HeartRateStatusCard(
+                      pulse: latest.pulse,
+                      assessment: latestHeartRate!,
+                    ),
+                    if (latestAssessment.isAbnormal ||
+                        latestHeartRate.needsAttention) ...[
                       const SizedBox(height: 16),
                       _CurrentReadingAlert(
                         assessment: latestAssessment,
-                        pulse: latest.pulse,
+                        heartRate: latestHeartRate,
                       ),
                     ],
                     const SizedBox(height: 16),
                     _SectionCard(
                       title: 'Biểu đồ huyết áp',
                       subtitle:
-                          'Đơn vị: mmHg · chấm xanh bình thường, chấm đỏ cần theo dõi',
+                          'Đơn vị: mmHg · xanh bình thường, vàng cần theo dõi, đỏ cần chú ý',
                       child: _chartItems.length < 2
                           ? const Padding(
                               padding: EdgeInsets.symmetric(vertical: 28),
@@ -297,14 +307,16 @@ class _HealthInsightsPageState extends State<HealthInsightsPage> {
       );
     }
 
-    if (BloodPressureAssessment.isPulseAbnormal(latest.pulse)) {
+    final heartRate = HeartRateAssessment.evaluate(latest.pulse);
+    if (heartRate.needsAttention) {
       insights.add(
-        const _HealthInsight(
-          icon: Icons.favorite_border_rounded,
-          color: Color(0xFFDB2777),
-          title: 'Nhịp tim cần được kiểm tra lại',
-          message:
-              'Nhịp tim ở lần đo gần nhất nằm ngoài khoảng thường gặp khi nghỉ. Hãy đo lại trong trạng thái thư giãn và theo dõi thêm.',
+        _HealthInsight(
+          icon: heartRate.isDanger
+              ? Icons.priority_high_rounded
+              : Icons.favorite_border_rounded,
+          color: _colorForHeartRate(heartRate),
+          title: heartRate.title,
+          message: heartRate.message,
         ),
       );
     }
@@ -330,6 +342,7 @@ const _normalGreen = Color(0xFF059669);
 const _watchAmber = Color(0xFFD97706);
 const _alertRed = Color(0xFFDC2626);
 const _criticalRed = Color(0xFFB91C1C);
+const _mutedGray = Color(0xFF66758A);
 
 Color _colorForAssessment(BloodPressureAssessment assessment) =>
     assessment.isNormal
@@ -349,16 +362,27 @@ IconData _iconForAssessment(BloodPressureAssessment assessment) =>
       _ => Icons.warning_amber_rounded,
     };
 
+Color _colorForHeartRate(HeartRateAssessment assessment) =>
+    switch (assessment.level) {
+      HeartRateLevel.healthy => _normalGreen,
+      HeartRateLevel.attention => _watchAmber,
+      HeartRateLevel.danger => _alertRed,
+      HeartRateLevel.unavailable => _mutedGray,
+    };
+
 class _CurrentReadingAlert extends StatelessWidget {
-  const _CurrentReadingAlert({required this.assessment, required this.pulse});
+  const _CurrentReadingAlert({
+    required this.assessment,
+    required this.heartRate,
+  });
 
   final BloodPressureAssessment assessment;
-  final int? pulse;
+  final HeartRateAssessment heartRate;
 
   @override
   Widget build(BuildContext context) {
     final color = _colorForAssessment(assessment);
-    final pulseWarning = BloodPressureAssessment.isPulseAbnormal(pulse);
+    final pulseWarning = heartRate.needsAttention;
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -383,9 +407,12 @@ class _CurrentReadingAlert extends StatelessWidget {
                 Text(assessment.message, style: const TextStyle(height: 1.35)),
                 if (pulseWarning) ...[
                   const SizedBox(height: 8),
-                  const Text(
-                    'Nhịp tim cũng đang ngoài mức 60-100 lần/phút. Bác hãy nghỉ và đo lại.',
-                    style: TextStyle(fontWeight: FontWeight.w700, height: 1.35),
+                  Text(
+                    heartRate.message,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w700,
+                      height: 1.35,
+                    ),
                   ),
                 ],
               ],
@@ -421,11 +448,13 @@ class _SummaryCards extends StatelessWidget {
     required this.latest,
     required this.items,
     required this.assessment,
+    required this.heartRate,
   });
 
   final HealthMeasurementHistoryItem latest;
   final List<HealthMeasurementHistoryItem> items;
   final BloodPressureAssessment assessment;
+  final HeartRateAssessment heartRate;
 
   @override
   Widget build(BuildContext context) {
@@ -463,11 +492,92 @@ class _SummaryCards extends StatelessWidget {
           label: 'Nhịp tim gần nhất',
           value: '${latest.pulse ?? '—'}',
           suffix: 'lần/phút',
-          color: const Color(0xFFDB2777),
+          color: _colorForHeartRate(heartRate),
         ),
       ],
     );
   }
+}
+
+class _HeartRateStatusCard extends StatelessWidget {
+  const _HeartRateStatusCard({required this.pulse, required this.assessment});
+
+  final int? pulse;
+  final HeartRateAssessment assessment;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = _colorForHeartRate(assessment);
+    return _SectionCard(
+      title: 'Nhịp tim lần gần nhất',
+      subtitle: 'Đánh giá từ lần vừa chụp và lưu',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.favorite_rounded, color: color, size: 30),
+              const SizedBox(width: 10),
+              Text(
+                '${pulse ?? '—'} lần/phút',
+                style: TextStyle(
+                  color: color,
+                  fontSize: 24,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  assessment.title,
+                  style: TextStyle(color: color, fontWeight: FontWeight.w800),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(assessment.message, style: const TextStyle(height: 1.35)),
+          const SizedBox(height: 14),
+          const Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              _HeartRateThreshold(
+                color: _alertRed,
+                label: 'Đỏ: dưới 50 hoặc trên 120',
+              ),
+              _HeartRateThreshold(
+                color: _watchAmber,
+                label: 'Vàng: 50–59 hoặc 101–120',
+              ),
+              _HeartRateThreshold(color: _normalGreen, label: 'Xanh: 60–100'),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _HeartRateThreshold extends StatelessWidget {
+  const _HeartRateThreshold({required this.color, required this.label});
+
+  final Color color;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) => Row(
+    mainAxisSize: MainAxisSize.min,
+    children: [
+      Container(
+        width: 10,
+        height: 10,
+        decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+      ),
+      const SizedBox(width: 5),
+      Text(label, style: const TextStyle(fontSize: 12)),
+    ],
+  );
 }
 
 class _MetricCard extends StatelessWidget {
